@@ -7,9 +7,9 @@ import os
 here = os.path.abspath(os.path.dirname(__file__))
 
 # General parameters
-name = 'FlowNaturalisation'
+name = 'nz-flow-naturalisation'
 main_package = 'flownat'
-datasets = 'datasets'
+# datasets = 'datasets'
 version = '0.0.1'
 descrip = 'Tools to perform flow naturalisation in New Zealand'
 

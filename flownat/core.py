@@ -31,8 +31,8 @@ except:
 
 base_dir = os.path.realpath(os.path.dirname(__file__))
 
-with open(os.path.join(base_dir, 'parameters.yml')) as param:
-    param = yaml.safe_load(param)
+with open(os.path.join(base_dir, 'parameters.yml')) as param2:
+    param = yaml.safe_load(param2)
 
 # datasets_path = os.path.join(base_dir, 'datasets')
 outputs = param['output']
@@ -42,28 +42,38 @@ catch_key_base = 'tethys/station_misc/{station_id}/catchment.geojson.zst'
 ####################################
 ### Testing
 
-base_dir = os.path.split(os.path.realpath(os.path.dirname(__file__)))[0]
+# base_dir = os.path.split(os.path.realpath(os.path.dirname(__file__)))[0]
+#
+# with open(os.path.join(base_dir, 'parameters.yml')) as param2:
+#     param1 = yaml.safe_load(param2)
+#
+# flow_remote = param1['remote']['flow']
+# usage_remote = param1['remote']['usage']
+#
+# from_date='2010-07-01'
+# to_date='2020-06-30'
+# product_code='quality_controlled_data'
+# min_gaugings=10
+# output_path=os.path.join(base_dir, 'tests')
+# local_tz='Etc/GMT-12'
+# station_id=['0bc0762fac7423261610b50f', '0ba603f66f55a19d18cbeb81', '0c6b76f9ff6fcf2e103f5e84', '2ec4a2cfa71dd4811eec25e4']
+# ref=None
+#
+#
+# self = FlowNat(flow_remote, usage_remote, from_date, to_date, product_code, min_gaugings, station_id, ref, output_path)
+#
+# stns_all = self.stations_all.station_id.unique().tolist().copy()
+#
+# stns1 = self.process_stations(stns_all)
+#
+# nat_flow = self.naturalisation()
 
-with open(os.path.join(base_dir, 'parameters.yml')) as param:
-    param1 = yaml.safe_load(param)
 
-flow_remote = param1['remote']['flow']
-usage_remote = param1['remote']['usage']
-
-from_date='2000-07-01'
-to_date='2020-06-30'
-product_code='quality_controlled_data'
-min_gaugings=10
-output_path=os.path.join(base_dir, 'tests')
-local_tz='Etc/GMT-12'
-station_id=['0bc0762fac7423261610b50f', '0ba603f66f55a19d18cbeb81', '0c6b76f9ff6fcf2e103f5e84', '2ec4a2cfa71dd4811eec25e4']
-ref=None
-
-
-self = FlowNat(flow_remote, usage_remote, from_date, to_date, product_code, min_gaugings, station_id, ref, output_path)
-
-nat_flow = self.naturalisation()
-
+# wap1 = 'SW/0082'
+#
+# a1 = AlloUsage(from_date='2015-06-30', to_date='2016-06-30', wap_filter={'wap': [wap1]})
+#
+# res1 = a1.get_ts(['allo', 'usage'], 'D', ['wap'])
 
 #######################################
 ### Class
@@ -142,10 +152,6 @@ class FlowNat(object):
 
         if (isinstance(station_id, list)) or (isinstance(ref, list)):
             stns1 = self.process_stations(station_id=station_id, ref=ref)
-
-
-
-
 
 
         # summ1 = self.flow_datasets(from_date=from_date, to_date=to_date, min_gaugings=8, rec_data_code=rec_data_code)
@@ -378,6 +384,7 @@ class FlowNat(object):
     #
     #     pass
 
+    @staticmethod
     def _get_catchment(inputs):
         """
 
@@ -394,6 +401,7 @@ class FlowNat(object):
 
         return c1
 
+
     def get_catchments(self, threads=30):
         """
 
@@ -408,7 +416,7 @@ class FlowNat(object):
 
         input_list = [{'s3': s3, 'bucket': bucket, 'station_id': s} for s in stn_ids]
 
-        output = ThreadPool(threads).map(_get_catchment, input_list)
+        output = ThreadPool(threads).map(self._get_catchment, input_list)
 
         catch1 = pd.concat(output).drop('id', axis=1)
         catch1.crs = pyproj.CRS(2193)
@@ -519,14 +527,21 @@ class FlowNat(object):
         wap_ids = waps2.wap.unique().tolist()
 
         allo1 = AlloUsage(wap_filter={'wap': wap_ids}, from_date=self.from_date, to_date=self.to_date)
+        # allo1 = AlloUsage(from_date=self.from_date, to_date=self.to_date)
 
-        usage1 = allo1.get_ts(['usage'], 'D', ['wap'])
-        usage2 = usage1['sw_usage'].reset_index().copy()
+        usage1 = allo1.get_ts(['allo', 'usage', 'usage_est'], 'D', ['wap'])
+        usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)]
+        usage2 = usage1a[['sw_allo', 'sw_usage', 'sw_usage_est']].reset_index().copy()
 
         usage3 = pd.merge(waps_catch[['wap', 'station_id']], usage2, on='wap')
 
-        usage4 = usage3.groupby(['station_id', 'date'])['sw_usage'].sum()
-        usage5 = (usage4 * 1000 / 24 / 60 / 60).round(3)
+        usage4 = usage3.groupby(['station_id', 'date'])[['sw_allo', 'sw_usage', 'sw_usage_est']].sum()
+        usage5 = (usage4 / 24 / 60 / 60).round(3)
+        # usage5 = usage4.copy()
+
+        usage5.loc[(usage5['sw_usage'] > 0) & (usage5['sw_usage_est'] > 0), 'sw_usage_est'] = 0
+
+        usage5.rename(columns={'sw_allo': 'allocation', 'sw_usage': 'measured usage', 'sw_usage_est': 'estimated usage'}, inplace=True)
 
         ## Save results
         if hasattr(self, 'output_path'):
@@ -629,7 +644,7 @@ class FlowNat(object):
 
                 for key, lst in buff_sites_dict.items():
                     # print(key)
-                    man_rec_ts_data3 = rec_data1.loc[:, lst].copy()
+                    man_rec_ts_data3 = rec_data1.loc[:, rec_data1.columns.isin(lst)].copy()
                     man_rec_ts_data3[man_rec_ts_data3 <= 0] = np.nan
 
                     man_ts_data3 = man_ts_data2.loc[:, [key]].copy()
@@ -699,6 +714,8 @@ class FlowNat(object):
         if hasattr(self, 'output_path'):
             run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
 
+            # stns
+
             if not reg_df.empty:
                 reg_flow_csv = outputs['reg_flow_csv'].format(run_date=run_time)
                 reg_df.to_csv(os.path.join(self.output_path, reg_flow_csv), index=False)
@@ -753,9 +770,10 @@ class FlowNat(object):
             flow1.columns = ['date', 'station_id', 'flow']
 
             flow2 = pd.merge(flow1, usage_daily_rate, on=['station_id', 'date'], how='left').set_index(['station_id', 'date']).sort_index()
-            flow2.loc[flow2['sw_usage'].isnull(), 'sw_usage'] = 0
+            flow2.loc[flow2['measured usage'].isnull(), 'measured usage'] = 0
+            flow2.loc[flow2['estimated usage'].isnull(), 'estimated usage'] = 0
 
-        flow2['nat_flow'] = flow2['flow'] + flow2['sw_usage']
+        flow2['nat flow'] = flow2['flow'] + flow2['measured usage'] + flow2['estimated usage']
 
         ## Use the reference identifier instead of station_ids
         ref_mapping = self.stations.set_index('station_id')['ref'].to_dict()
@@ -799,30 +817,37 @@ class FlowNat(object):
         nat_flow1 = nat_flow.loc[:, (slice(None), input_site)]
         nat_flow1.columns = nat_flow1.columns.droplevel(1)
 
-        colors1 = ['rgb(102,194,165)', 'rgb(252,141,98)', 'rgb(141,160,203)']
+        colors1 = ['rgb(102,194,165)', 'rgb(252,141,98)', 'rgb(252,141,0)', 'rgb(141,160,203)']
 
         orig = go.Scattergl(
             x=nat_flow1.index,
             y=nat_flow1['flow'],
             name = 'Recorded Flow',
-            line = dict(color = colors1[2]),
+            line = dict(color = colors1[3]),
             opacity = 0.8)
 
-        usage = go.Scattergl(
+        meas_usage = go.Scattergl(
             x=nat_flow1.index,
-            y=nat_flow1['sw_usage'],
-            name = 'Stream Usage',
+            y=nat_flow1['measured usage'],
+            name = 'Measured Stream Usage',
             line = dict(color = colors1[1]),
+            opacity = 0.8)
+
+        est_usage = go.Scattergl(
+            x=nat_flow1.index,
+            y=nat_flow1['estimated usage'],
+            name = 'Estimated Stream Usage',
+            line = dict(color = colors1[2]),
             opacity = 0.8)
 
         nat = go.Scattergl(
             x=nat_flow1.index,
-            y=nat_flow1['nat_flow'],
+            y=nat_flow1['nat flow'],
             name = 'Naturalised Flow',
             line = dict(color = colors1[0]),
             opacity = 0.8)
 
-        data = [orig, usage, nat]
+        data = [orig, meas_usage, est_usage, nat]
 
         layout = dict(
             title=input_site + ' Naturalisation',

@@ -1,6 +1,6 @@
 {% set name = "nz-flow-naturalisation" %}
 {% set version = "0.0.1" %}
-{% set sha256 = "703b5bd05f553564456695e7f0b251ae3a5ab6883d3805ccb58af0cb5526c670" %}
+{% set sha256 = "24c8292dcc56d55aa352bd478df55fbedc1ba6833da8b45bf797f7767f76cc60" %}
 
 # sha256 is the prefered checksum -- you can get it for a file with:
 #  `openssl sha256 <file name>`.
@@ -35,7 +35,7 @@ requirements:
     - python
     - setuptools
   run:
-    - python>=3.5
+    - python>=3.6
     - pyyaml
     - gistools
     - requests
