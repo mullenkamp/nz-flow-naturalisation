@@ -591,7 +591,7 @@ class FlowNat(object):
             stns1 = stns[stns['dataset_id'] == ds_id].copy()
             stn_ids = stns1['station_id'].unique().tolist()
 
-            flow_data1 = tethys1.bulk_time_series_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, output='DataArray', threads=threads)
+            flow_data1 = tethys1.get_bulk_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, output='DataArray', threads=threads)
 
             data_list = []
             for k, val in flow_data1.items():
@@ -624,7 +624,7 @@ class FlowNat(object):
                 buff_sites = list(set(buff_sites_list))
 
                 ## Pull out recorder data needed for all manual sites
-                rec_data1 = tethys1.bulk_time_series_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, output='DataArray', threads=threads)
+                rec_data1 = tethys1.get_bulk_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, output='DataArray', threads=threads)
 
                 data_list = []
                 for k, val in rec_data1.items():
