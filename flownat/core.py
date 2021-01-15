@@ -242,7 +242,8 @@ class FlowNat(object):
 
         stns_list2 = [s for s in stns_list if s['stats']['count'] >= self.min_gaugings]
 
-        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date'], 'time_series_object_key': s['time_series_object_key']['key']} for s in stns_list2]
+        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date']} for s in stns_list2]
+        [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
         stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
@@ -447,6 +448,7 @@ class FlowNat(object):
             stns_list.extend(stns1)
 
         stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date']} for s in stns_list]
+        [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
         stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
@@ -581,8 +583,16 @@ class FlowNat(object):
 
         rec_stns = self.stations_all[self.stations_all.dataset_id == rec_ds_id].to_crs(2193).copy()
 
-        from_date1 = pd.Timestamp(self.from_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
-        to_date1 = pd.Timestamp(self.to_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
+        if self.from_date is None:
+            from_date1 = None
+        else:
+            from_date1 = pd.Timestamp(self.from_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
+        if self.to_date is None:
+            to_date1 = None
+        else:
+            to_date1 = pd.Timestamp(self.to_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
+
+
 
         ### Iterate through the two datasets
 
@@ -652,10 +662,10 @@ class FlowNat(object):
 
                     lm1 = LM(man_rec_ts_data3, man_ts_data3)
                     res1 = lm1.predict(n_ind=1, x_transform='log', y_transform='log', min_obs=self.min_gaugings)
-                    res1_f = res1.summary_df['f value'].iloc[0]
                     if res1 is None:
                         continue
 
+                    res1_f = res1.summary_df['f value'].iloc[0]
                     res2 = lm1.predict(n_ind=2, x_transform='log', y_transform='log', min_obs=self.min_gaugings)
                     if res2 is not None:
                         res2_f = res2.summary_df['f value'].iloc[0]
