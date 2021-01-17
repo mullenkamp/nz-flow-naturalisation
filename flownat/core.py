@@ -242,7 +242,7 @@ class FlowNat(object):
 
         stns_list2 = [s for s in stns_list if s['stats']['count'] >= self.min_gaugings]
 
-        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date']} for s in stns_list2]
+        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date'], 'altitude': s['altitude']} for s in stns_list2]
         [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
