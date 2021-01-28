@@ -535,8 +535,9 @@ class FlowNat(object):
         usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)]
         usage2 = usage1a[['sw_allo', 'sw_usage', 'sw_usage_est']].reset_index().copy()
 
-        usage3 = pd.merge(waps_catch[['wap', 'station_id']], usage2, on='wap')
+        usage3 = pd.merge(waps_catch[['wap', 'station_id', 'wap_stn_id']], usage2, on='wap')
 
+        ## Aggregate by flow station id and date
         usage4 = usage3.groupby(['station_id', 'date'])[['sw_allo', 'sw_usage', 'sw_usage_est']].sum()
         usage5 = (usage4 / 24 / 60 / 60).round(3)
         # usage5 = usage4.copy()
@@ -544,6 +545,15 @@ class FlowNat(object):
         usage5.loc[(usage5['sw_usage'] > 0) & (usage5['sw_usage_est'] > 0), 'sw_usage_est'] = 0
 
         usage5.rename(columns={'sw_allo': 'allocation', 'sw_usage': 'measured usage', 'sw_usage_est': 'estimated usage'}, inplace=True)
+
+        ## Aggregate by flow station id, wap station id, and date
+        usage6 = usage3.groupby(['station_id', 'wap_stn_id', 'date'])[['sw_allo', 'sw_usage', 'sw_usage_est']].sum()
+        usage7 = (usage6 / 24 / 60 / 60).round(3)
+        # usage5 = usage4.copy()
+
+        usage7.loc[(usage6['sw_usage'] > 0) & (usage6['sw_usage_est'] > 0), 'sw_usage_est'] = 0
+
+        usage7.rename(columns={'sw_allo': 'allocation', 'sw_usage': 'measured usage', 'sw_usage_est': 'estimated usage'}, inplace=True)
 
         ## Save results
         if hasattr(self, 'output_path'):
@@ -553,6 +563,7 @@ class FlowNat(object):
             usage1.to_csv(os.path.join(self.output_path, usage_rate_wap_csv))
 
         setattr(self, 'usage_rate', usage5.reset_index())
+        setattr(self, 'usage_rate_wap', usage7.reset_index())
 
         return usage5.reset_index()
 
@@ -591,8 +602,6 @@ class FlowNat(object):
             to_date1 = None
         else:
             to_date1 = pd.Timestamp(self.to_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
-
-
 
         ### Iterate through the two datasets
 
