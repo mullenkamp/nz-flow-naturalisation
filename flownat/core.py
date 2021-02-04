@@ -7,16 +7,16 @@ Created on Tue Jul  2 09:04:41 2019
 import io
 import numpy as np
 import requests
-from gistools import rec, vector
+from gistools import vector
 from allotools import AlloUsage
 from hydrolm import LM
 from tethysts import Tethys
+from tethysts import utils
 import os
 import yaml
 import pandas as pd
 import geopandas as gpd
 import tethys_utils as tu
-import lzma
 from shapely.geometry import Point
 from multiprocessing.pool import ThreadPool
 import pyproj
@@ -392,12 +392,11 @@ class FlowNat(object):
         """
         station_id = inputs['station_id']
         bucket = inputs['bucket']
-        s3 = inputs['s3']
+        conn_config = inputs['conn_config']
 
         key1 = catch_key_base.format(station_id=station_id)
-        resp = s3.get_object(Bucket=bucket, Key=key1)
-        b1 = tu.read_pkl_zstd(resp['Body'].read(), False)
-        b2 = io.BytesIO(b1)
+        obj1 = utils.get_object_s3(key1, conn_config, bucket, 'zstd')
+        b2 = io.BytesIO(obj1)
         c1 = gpd.read_file(b2)
 
         return c1
@@ -413,9 +412,9 @@ class FlowNat(object):
         conn_config = self.flow_remote['connection_config']
         bucket = self.flow_remote['bucket']
 
-        s3 = tu.s3_connection(conn_config, threads)
+        # s3 = tu.s3_connection(conn_config, threads)
 
-        input_list = [{'s3': s3, 'bucket': bucket, 'station_id': s} for s in stn_ids]
+        input_list = [{'conn_config': conn_config, 'bucket': bucket, 'station_id': s} for s in stn_ids]
 
         output = ThreadPool(threads).map(self._get_catchment, input_list)
 
@@ -542,7 +541,7 @@ class FlowNat(object):
         usage5 = (usage4 / 24 / 60 / 60).round(3)
         # usage5 = usage4.copy()
 
-        usage5.loc[(usage5['sw_usage'] > 0) & (usage5['sw_usage_est'] > 0), 'sw_usage_est'] = 0
+        # usage5.loc[(usage5['sw_usage'] > 0) & (usage5['sw_usage_est'] > 0), 'sw_usage_est'] = 0
 
         usage5.rename(columns={'sw_allo': 'allocation', 'sw_usage': 'measured usage', 'sw_usage_est': 'estimated usage'}, inplace=True)
 
@@ -551,7 +550,7 @@ class FlowNat(object):
         usage7 = (usage6 / 24 / 60 / 60).round(3)
         # usage5 = usage4.copy()
 
-        usage7.loc[(usage6['sw_usage'] > 0) & (usage6['sw_usage_est'] > 0), 'sw_usage_est'] = 0
+        # usage7.loc[(usage6['sw_usage'] > 0) & (usage6['sw_usage_est'] > 0), 'sw_usage_est'] = 0
 
         usage7.rename(columns={'sw_allo': 'allocation', 'sw_usage': 'measured usage', 'sw_usage_est': 'estimated usage'}, inplace=True)
 
@@ -852,10 +851,17 @@ class FlowNat(object):
             line = dict(color = colors1[1]),
             opacity = 0.8)
 
+        # est_usage = go.Scattergl(
+        #     x=nat_flow1.index,
+        #     y=nat_flow1['estimated usage'],
+        #     name = 'Estimated Stream Usage',
+        #     line = dict(color = colors1[2]),
+        #     opacity = 0.8)
+
         est_usage = go.Scattergl(
             x=nat_flow1.index,
-            y=nat_flow1['estimated usage'],
-            name = 'Estimated Stream Usage',
+            y=nat_flow1['allocation'],
+            name = 'Allocation',
             line = dict(color = colors1[2]),
             opacity = 0.8)
 
