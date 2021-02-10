@@ -531,7 +531,9 @@ class FlowNat(object):
         # allo1 = AlloUsage(from_date=self.from_date, to_date=self.to_date)
 
         usage1 = allo1.get_ts(['allo', 'usage', 'usage_est'], 'D', ['wap'])
-        usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)]
+        usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].copy()
+        if 'sw_usage_est' not in usage1a.columns:
+            usage1a['sw_usage_est'] = 0
         usage2 = usage1a[['sw_allo', 'sw_usage', 'sw_usage_est']].reset_index().copy()
 
         usage3 = pd.merge(waps_catch[['wap', 'station_id', 'wap_stn_id']], usage2, on='wap')
