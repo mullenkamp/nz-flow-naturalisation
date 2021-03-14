@@ -241,8 +241,10 @@ class FlowNat(object):
             stns_list.extend(stns1)
 
         stns_list2 = [s for s in stns_list if s['stats']['count'] >= self.min_gaugings]
+        # stns_list2 = stns_list
 
         stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date'], 'altitude': s['altitude']} for s in stns_list2]
+        # stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date'], 'altitude': s['altitude']} for s in stns_list2]
         [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
@@ -326,6 +328,7 @@ class FlowNat(object):
 
         ## Drop duplicate stations
         stns2 = stns1.sort_values('count', ascending=False).drop_duplicates('station_id')
+        # stns2 = stns1.drop_duplicates('station_id')
 
         setattr(self, 'stations', stns2)
 
@@ -395,9 +398,12 @@ class FlowNat(object):
         conn_config = inputs['conn_config']
 
         key1 = catch_key_base.format(station_id=station_id)
-        obj1 = utils.get_object_s3(key1, conn_config, bucket, 'zstd')
-        b2 = io.BytesIO(obj1)
-        c1 = gpd.read_file(b2)
+        try:
+            obj1 = utils.get_object_s3(key1, conn_config, bucket, 'zstd', 0)
+            b2 = io.BytesIO(obj1)
+            c1 = gpd.read_file(b2)
+        except:
+            c1 = gpd.GeoDataFrame(columns=['id', 'area', 'dataset_id', 'distance', 'nzsegment', 'ref', 'station_id', 'geometry'])
 
         return c1
 
