@@ -42,21 +42,23 @@ catch_key_base = 'tethys/station_misc/{station_id}/catchment.geojson.zst'
 ####################################
 ### Testing
 
-# base_dir = os.path.split(os.path.realpath(os.path.dirname(__file__)))[0]
-#
-# with open(os.path.join(base_dir, 'parameters.yml')) as param2:
-#     param1 = yaml.safe_load(param2)
-#
-# flow_remote = param1['remote']['flow']
-# usage_remote = param1['remote']['usage']
+base_dir = os.path.split(os.path.realpath(os.path.dirname(__file__)))[0]
+
+with open(os.path.join(base_dir, 'parameters.yml')) as param2:
+    param1 = yaml.safe_load(param2)
+
+flow_remote = param1['remote']['flow']
+usage_remote = param1['remote']['usage']
 #
 # from_date='2010-07-01'
+# from_date=None
 # to_date='2020-06-30'
 # product_code='quality_controlled_data'
 # min_gaugings=10
 # output_path=os.path.join(base_dir, 'tests')
 # local_tz='Etc/GMT-12'
-# station_id=['0bc0762fac7423261610b50f', '0ba603f66f55a19d18cbeb81', '0c6b76f9ff6fcf2e103f5e84', '2ec4a2cfa71dd4811eec25e4']
+# station_id=['0bc0762fac7423261610b50f', '0ba603f66f55a19d18cbeb81', '0c6b76f9ff6fcf2e103f5e84', '2ec4a2cfa71dd4811eec25e4', '0d1024b9975b573e515ebd62']
+# station_id=['0d1024b9975b573e515ebd62']
 # ref=None
 #
 #
@@ -241,6 +243,7 @@ class FlowNat(object):
             stns_list.extend(stns1)
 
         stns_list2 = [s for s in stns_list if s['stats']['count'] >= self.min_gaugings]
+        # stns_list2 = stns_list
 
         stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date']} for s in stns_list2]
         [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
@@ -248,6 +251,9 @@ class FlowNat(object):
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
         stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
         stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+
+        # stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_localize(None)
+        # stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_localize(None)
 
         if isinstance(self.from_date, str):
             from_date1 = pd.Timestamp(self.from_date)
@@ -326,6 +332,7 @@ class FlowNat(object):
 
         ## Drop duplicate stations
         stns2 = stns1.sort_values('count', ascending=False).drop_duplicates('station_id')
+        # stns2 = stns1.drop_duplicates('station_id')
 
         setattr(self, 'stations', stns2)
 
@@ -395,9 +402,12 @@ class FlowNat(object):
         conn_config = inputs['conn_config']
 
         key1 = catch_key_base.format(station_id=station_id)
-        obj1 = utils.get_object_s3(key1, conn_config, bucket, 'zstd')
-        b2 = io.BytesIO(obj1)
-        c1 = gpd.read_file(b2)
+        try:
+            obj1 = utils.get_object_s3(key1, conn_config, bucket, 'zstd', 0)
+            b2 = io.BytesIO(obj1)
+            c1 = gpd.read_file(b2)
+        except:
+            c1 = gpd.GeoDataFrame(columns=['id', 'area', 'dataset_id', 'distance', 'nzsegment', 'ref', 'station_id', 'geometry'])
 
         return c1
 
@@ -452,6 +462,9 @@ class FlowNat(object):
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
         stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
         stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+
+        # stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_localize(None)
+        # stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_localize(None)
 
         if isinstance(self.from_date, str):
             from_date1 = pd.Timestamp(self.from_date)
@@ -531,7 +544,9 @@ class FlowNat(object):
         # allo1 = AlloUsage(from_date=self.from_date, to_date=self.to_date)
 
         usage1 = allo1.get_ts(['allo', 'usage', 'usage_est'], 'D', ['wap'])
-        usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)]
+        usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].copy()
+        if 'sw_usage_est' not in usage1a.columns:
+            usage1a['sw_usage_est'] = 0
         usage2 = usage1a[['sw_allo', 'sw_usage', 'sw_usage_est']].reset_index().copy()
 
         usage3 = pd.merge(waps_catch[['wap', 'station_id', 'wap_stn_id']], usage2, on='wap')
@@ -602,6 +617,15 @@ class FlowNat(object):
         else:
             to_date1 = pd.Timestamp(self.to_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
 
+        # if self.from_date is None:
+        #     from_date1 = None
+        # else:
+        #     from_date1 = pd.Timestamp(self.from_date)
+        # if self.to_date is None:
+        #     to_date1 = None
+        # else:
+        #     to_date1 = pd.Timestamp(self.to_date)
+
         ### Iterate through the two datasets
 
         for ds in flow_ds:
@@ -624,6 +648,8 @@ class FlowNat(object):
 
             # flow_data = pd.concat(data_list)
             flow_data['time'] = flow_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
+            # flow_data['time'] = flow_data['time'].dt.tz_localize(None).dt.floor('D')
+
             flow_data = flow_data.groupby(['station_id', 'time']).mean().reset_index()
 
             if ds['method'] == 'field_activity':
