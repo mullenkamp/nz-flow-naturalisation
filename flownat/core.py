@@ -242,7 +242,7 @@ class FlowNat(object):
 
         stns_list2 = [s for s in stns_list if s['stats']['count'] >= self.min_gaugings]
 
-        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date'], 'altitude': s['altitude']} for s in stns_list2]
+        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['stats']['from_date'], 'to_date': s['stats']['to_date']} for s in stns_list2]
         [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
@@ -609,17 +609,20 @@ class FlowNat(object):
             stns1 = stns[stns['dataset_id'] == ds_id].copy()
             stn_ids = stns1['station_id'].unique().tolist()
 
-            flow_data1 = tethys1.get_bulk_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, output='DataArray', threads=threads)
+            flow_data1 = tethys1.get_bulk_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
 
-            data_list = []
-            for k, val in flow_data1.items():
-                # print(k)
-                val1 = val.squeeze('height').drop_vars('height')
-                val2 = val1.to_dataframe().reset_index()
-                val2['station_id'] = k
-                data_list.append(val2)
+            val2 = flow_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
+            flow_data = val2.drop('geometry', axis=1).dropna()
 
-            flow_data = pd.concat(data_list)
+            # data_list = []
+            # for k, val in flow_data1.items():
+            #     # print(k)
+            #     val1 = val.squeeze('height').drop_vars('height')
+            #     val2 = val1.to_dataframe().reset_index()
+            #     val2['station_id'] = k
+            #     data_list.append(val2)
+
+            # flow_data = pd.concat(data_list)
             flow_data['time'] = flow_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
             flow_data = flow_data.groupby(['station_id', 'time']).mean().reset_index()
 
@@ -642,19 +645,23 @@ class FlowNat(object):
                 buff_sites = list(set(buff_sites_list))
 
                 ## Pull out recorder data needed for all manual sites
-                rec_data1 = tethys1.get_bulk_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, output='DataArray', threads=threads)
+                rec_data1 = tethys1.get_bulk_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
 
-                data_list = []
-                for k, val in rec_data1.items():
-                    # print(k)
-                    val1 = val.squeeze('height').drop_vars('height')
-                    val2 = val1.to_dataframe().reset_index()
-                    val2['station_id'] = k
-                    data_list.append(val2)
+                val2 = rec_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
+                rec_data = val2.drop('geometry', axis=1).dropna()
 
-                rec_data = pd.concat(data_list)
-                rec_data['time'] = rec_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None)
-                rec_data1 = rec_data.set_index(['station_id', 'time'])['streamflow'].unstack(0).interpolate('time', limit=10)
+                # data_list = []
+                # for k, val in rec_data1.items():
+                #     # print(k)
+                #     val1 = val.squeeze('height').drop_vars('height')
+                #     val2 = val1.to_dataframe().reset_index()
+                #     val2['station_id'] = k
+                #     data_list.append(val2)
+
+                # rec_data = pd.concat(data_list)
+                rec_data['time'] = rec_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
+                rec_data1 = rec_data.groupby(['station_id', 'time']).mean()
+                rec_data1 = rec_data1['streamflow'].unstack(0).interpolate('time', limit=10)
 
                 ## Run through regressions
                 reg_lst = []
@@ -719,6 +726,8 @@ class FlowNat(object):
 
             elif ds['method'] == 'sensor_recording':
                 rec_flow_data = flow_data.set_index(['station_id', 'time'])['streamflow'].unstack(0)
+            else:
+                raise ValueError('The dataset method should be either field_activity or sensor_recording.')
 
         if not 'sensor_recording' in methods:
             flow = new_data2.round(3)
@@ -790,15 +799,17 @@ class FlowNat(object):
             flow2 = pd.merge(flow1, usage_daily_rate, on=['station_id', 'date'], how='left').set_index(['station_id', 'date']).sort_index()
             flow2.loc[flow2['measured usage'].isnull(), 'measured usage'] = 0
             flow2.loc[flow2['estimated usage'].isnull(), 'estimated usage'] = 0
+            flow2.loc[flow2['allocation'].isnull(), 'allocation'] = 0
 
         flow2['nat flow'] = flow2['flow'] + flow2['measured usage'] + flow2['estimated usage']
 
         ## Use the reference identifier instead of station_ids
         ref_mapping = self.stations.set_index('station_id')['ref'].to_dict()
 
-        flow3 = pd.merge(flow2.reset_index(), self.stations[['station_id', 'ref']], on='station_id').drop('station_id', axis=1).set_index(['ref', 'date'])
+        flow3 = pd.merge(flow2.reset_index(), self.stations[['station_id', 'ref']], on='station_id').drop('station_id', axis=1)
+        flow4 = flow3.groupby(['ref', 'date']).mean()
 
-        nat_flow = flow3.unstack(0).round(3)
+        nat_flow = flow4.unstack(0).round(3)
 
         ## Save results
         if hasattr(self, 'output_path'):
