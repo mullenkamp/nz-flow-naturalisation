@@ -1,6 +1,6 @@
 {% set name = "nz-flow-naturalisation" %}
-{% set version = "0.0.9" %}
-{% set sha256 = "d0398fc8cc91cc91c6b87e6c7df586dad7894f27695fd86e0c603217933e7e5d" %}
+{% set version = "0.0.14" %}
+{% set sha256 = "3ce1c1a7ee1fbb8aa23b2286d94db55acb4b52a00e66ae61a0028def79ff3ae6" %}
 
 # sha256 is the prefered checksum -- you can get it for a file with:
 #  `openssl sha256 <file name>`.
@@ -45,7 +45,7 @@ requirements:
 
 test:
   imports:
-    - flownat.core
+    - flownat
 
 about:
   home: https://github.com/mullenkamp/nz-flow-naturalisation

@@ -13,10 +13,10 @@ from hydrolm import LM
 from tethysts import Tethys
 from tethysts import utils
 import os
+import sys
 import yaml
 import pandas as pd
 import geopandas as gpd
-import tethys_utils as tu
 from shapely.geometry import Point
 from multiprocessing.pool import ThreadPool
 import pyproj
@@ -29,7 +29,10 @@ except:
 #####################################
 ### Parameters
 
+# base_dir = os.path.dirname(os.path.abspath( __file__ ))
 base_dir = os.path.realpath(os.path.dirname(__file__))
+
+print(base_dir)
 
 with open(os.path.join(base_dir, 'parameters.yml')) as param2:
     param = yaml.safe_load(param2)
@@ -42,13 +45,13 @@ catch_key_base = 'tethys/station_misc/{station_id}/catchment.geojson.zst'
 ####################################
 ### Testing
 
-base_dir = os.path.split(os.path.realpath(os.path.dirname(__file__)))[0]
+# base_dir = os.path.split(os.path.realpath(os.path.dirname(__file__)))[0]
 
-with open(os.path.join(base_dir, 'parameters.yml')) as param2:
-    param1 = yaml.safe_load(param2)
+# with open(os.path.join(base_dir, 'parameters.yml')) as param2:
+#     param1 = yaml.safe_load(param2)
 
-flow_remote = param1['remote']['flow']
-usage_remote = param1['remote']['usage']
+# flow_remote = param1['remote']['flow']
+# usage_remote = param1['remote']['usage']
 #
 # from_date='2010-07-01'
 # from_date=None
@@ -421,8 +424,6 @@ class FlowNat(object):
 
         conn_config = self.flow_remote['connection_config']
         bucket = self.flow_remote['bucket']
-
-        # s3 = tu.s3_connection(conn_config, threads)
 
         input_list = [{'conn_config': conn_config, 'bucket': bucket, 'station_id': s} for s in stn_ids]
 
