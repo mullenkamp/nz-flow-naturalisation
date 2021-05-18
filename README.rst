@@ -1,4 +1,4 @@
-FlowNaturalisation
+nz-flow-naturalisation
 ==================================
 
 This git repository contains project code for the flow naturalisation procedure. The procedure has several modules for performing different tasks that ultimately combine for the naturalisation.
@@ -16,10 +16,10 @@ Input parameters
 ----------------
 The base class (FlowNat) initialises the tool with a from_date, to_date, min_gaugings, input_sites, rec_data_code, and output_path. This sets up and prepares a lot of datasets for the successive modules. If all of those input parameters are defined at initialisation, then all of the successive modules/methods will not require any other input.
 
-Example scripts
----------------
-An example script can be found here: https://github.com/Data-to-Knowledge/FlowNaturalisation/blob/master/flownat/tests/utest_ash_2019-07-19.py.
-The output_path will need to be modified for the specific user.
+.. Example scripts
+.. ---------------
+.. An example script can be found here: https://github.com/Data-to-Knowledge/FlowNaturalisation/blob/master/flownat/tests/utest_ash_2019-07-19.py.
+.. The output_path will need to be modified for the specific user.
 
 Background and package dependencies
 -----------------------------------
@@ -29,7 +29,7 @@ The catchment delineation module uses the python package gistools which has a ca
 
 Not all flow locations have a continuous record from a recorder. Consequently, the flow sites with only gaugings need to be correlated to flow sites with (nearly) continuous recorders. This is done via the hydrolm package that uses ordinary least squares regressions of one or two recorders. The F statistic is used to determine the best regression.
 
-Water usage data also needs to be estimated when it doesn't already exist. This was done by grouping the consents by SWAZ/catchment and use type and estimating the ratio of usage to allocation by month. These ratios were then applied at all consents without existing water usage data. This analysis was performed on a monthly scale.
+Water usage data also needs to be estimated when it doesn't already exist. This was done by grouping the consents by catchment and use type and estimating the ratio of usage to allocation by month. These ratios were then applied at all consents without existing water usage data. This analysis was performed on a monthly scale.
 
 General methodology
 -------------------
@@ -39,16 +39,16 @@ Introduction
 River flows are affected by many factors. These include climate, geology, vegetation, water abstractions, and others. To be able to appropriately allocate water for abstraction, river flows need to be estimated without the influence of existing water abstractions for the consideration of other important values associated with surface waters (e.g. environmental, cultural, recreational, etc.). The process of estimating a new flow series by removing the effects of upstream water abstractions is called naturalisation.
 
 The naturalisation of river flows is the process of ‘adding back’ the surface water abstractions and hydraulically connected groundwater abstractions to a flow record. Naturalisation is a process to recreate the flow record if the upstream water abstractions did not take place.
-The goal of this memo is to describe a new tool to accurately and efficiently naturalise surface water flows in Canterbury. This tool has been developed in Python as an installable package from pypi. The github repository can be found here: https://github.com/Data-to-Knowledge/FlowNaturalisation
+The goal of this memo is to describe a new tool to accurately and efficiently naturalise surface water flows in Canterbury. This tool has been developed in Python as an installable package from pypi. The github repository can be found here: https://github.com/mullenkamp/nz-flow-naturalisation
 
 Requirements
 ~~~~~~~~~~~~~
 The requirements for the tool includes:
 
-- Datasets available to ECan and maintained
-- Consistent with existing ECan methods
+- Datasets available to Tethys
+- Consistent with existing Environment Canterbury and Environment Southland methods
 - Relatively simple
-- Work for the entire record of any recorder or gauging site in Canterbury with sufficient data
+- Work for the entire record of any recorder or gauging site with sufficient data
 - Reproducible
 - Produce results quickly (a few minutes)
 
@@ -68,7 +68,7 @@ Querying and/or estimating flow at the input sites
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 One of the input data required for the naturalisation is continuous flow records at particular locations prior to naturalisation. This usually comes in two forms: recorded continuous flow at a site with a recorder, or a site where manual flow measurements are taken but do not have a recorder.
 
-If the site has a recorder, then the tool simply pulls the data out from ECan’s systems and uses it directly as long as the flow record covers the requested date period for the naturalisation. If it doesn’t cover the requested period, then manual flows for that site is used.
+If the site has a recorder, then the tool simply pulls the data out from the Tethys system and uses it directly as long as the flow record covers the requested date period for the naturalisation. If it does not cover the requested period, then manual flows for that site is used.
 If manual flows for sites are used then a log-log regression to flow records with sufficient length and a maximum distance (default is 50 km) is used. The best correlation is selected based on the highest F value and a new continuous flow record is estimated from the correlation.
 All flows (and other time series data used in this naturalisation) are daily means. Currently, the regressions use the full range of flows.
 
@@ -80,13 +80,13 @@ The nearest river segments to flow sites are identified, then upstream river net
 
 Selecting the upstream water abstraction sites from the catchment delineation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Once the catchments have been delineated above all flow sites, then the WAPs that are considered stream depleting are selected and assigned to each catchment/flow site. The WAPs and the associated consents have already been preassigned whether they are stream depleting and by how much using an ECan implementation of the Theis method for in Smith, 2015. Both the WAPs and the associated stream depletion rates are extracted from ECan’s database during this step.
+Once the catchments have been delineated above all flow sites, then the WAPs that are considered stream depleting are selected and assigned to each catchment/flow site. The WAPs and the associated consents have already been preassigned whether they are stream depleting and by how much using an ECan implementation of the Theis method for in Smith, 2015. Both the WAPs and the associated stream depletion rates are extracted from the regional council's systems.
 
 Querying and Estimating water usage when the usage doesn't exist
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-This is probably the most complicated module of the entire naturalisation process and this section will not go into exhaustive detail about it’s implementation. But generally, this involves querying the existing usage data associated with all WAPs/consents found in the prior module, then estimating the usage where it doesn’t exist.
+This is probably the most complicated module of the entire naturalisation process and this section will not go into exhaustive detail about it’s implementation. But generally, this involves querying the existing usage data associated with all WAPs/consents found in the prior module, then estimating the usage where it does not exist.
 
-This module primarily uses the EcanAlloUsageTools python package for extracting water usage data from ECan’s databases. This tool pulls from a summary of the Accela data specifically for stream depleting consents that are considered "consumptive". Given the limitations of the data in the Accela database, any consents that have "temporary wavers" or have conditions that are shared between multiple consents (e.g. non-concurrence) are ignored (because the info is not available). The minimum flow restrictions were accounted for in the consented rates and volumes. If a consent was restricted from taking water for some period of the year, that volume was deducted from the values used in the processing. These minimum flow restricted rates and volumes for the consents are split proportionally across their WAPs (if there are more than one WAP on a consent).
+This module primarily uses the nz-allo-usage-tools python package by processing allocation and water usage obtained from the regional councils. This tool pulls from a summary of the data specifically for stream depleting consents that are considered "consumptive". Given the limitations of the source databases, any consents that have "temporary wavers" or have conditions that are shared between multiple consents (e.g. non-concurrence) are ignored (because the info is not readily available). The minimum flow restrictions were accounted for in the consented rates and volumes. If a consent was restricted from taking water for some period of the year, that volume was deducted from the values used in the processing. These minimum flow restricted rates and volumes for the consents are split proportionally across their WAPs (if there are more than one WAP on a consent).
 
 First, all of the existing water usage data for the upstream WAPs are extracted. Given that the water usage data does not have much quality controls, three filters are used to ensure that the usage values are “realistic”. These are usage/allocation ratios at the daily, monthly, and yearly scales. The defaults are 2, 3, and 2 respectively. These were found to be generous enough to retain real-looking usage values and exclude erroneous ones. Though it is possible to have gotten false positives and negatives using these filters.
 Once the data has been filtered, abstraction/allocation ratios were calculated and lumped by month of the year, catchment, and use type. These ratios were then applied to the WAPs that did not have usage data to estimate the usage data by month. The results of the querying and estimating of the usage data is that all consented WAPs that are considered both stream depleting and consumptive have usage data.
