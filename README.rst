@@ -25,7 +25,7 @@ Background and package dependencies
 -----------------------------------
 The modules use several python packages for their procedures.
 
-The catchment delineation module uses the python package gistools which has a catchment delineation function. This functions uses the REC stream network version 2 and the associated catchments for determining the catchments above specific points. The flow locations are used to delineate the upstream catchments. The upstream catchments are then used to select the WAPs that are within each catchment. The WAPs were taken from a summary of Accela.
+The catchment delineation module uses the python package gistools which has a catchment delineation function. This functions uses the REC stream network version 2 and the associated catchments for determining the catchments above specific points. The flow locations are used to delineate the upstream catchments. The upstream catchments are then used to select the WAPs that are within each catchment.
 
 Not all flow locations have a continuous record from a recorder. Consequently, the flow sites with only gaugings need to be correlated to flow sites with (nearly) continuous recorders. This is done via the hydrolm package that uses ordinary least squares regressions of one or two recorders. The F statistic is used to determine the best regression.
 
