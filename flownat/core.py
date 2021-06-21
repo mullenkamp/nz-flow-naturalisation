@@ -636,7 +636,7 @@ class FlowNat(object):
 
             flow_data1 = tethys1.get_bulk_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
 
-            val2 = flow_data1[['streamflow', 'station_id']].drop(['geometry', 'height']).to_dataframe().reset_index()
+            val2 = flow_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
             flow_data = val2.drop('geometry', axis=1).dropna()
 
             # data_list = []
@@ -674,7 +674,7 @@ class FlowNat(object):
                 ## Pull out recorder data needed for all manual sites
                 rec_data1 = tethys1.get_bulk_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
 
-                val2 = rec_data1[['streamflow', 'station_id']].drop(['geometry', 'height']).to_dataframe().reset_index()
+                val2 = rec_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
                 rec_data = val2.drop('geometry', axis=1).dropna()
 
                 # data_list = []
