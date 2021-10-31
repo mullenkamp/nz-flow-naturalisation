@@ -544,31 +544,31 @@ class FlowNat(object):
         allo1 = AlloUsage(wap_filter={'wap': wap_ids}, from_date=self.from_date, to_date=self.to_date)
         # allo1 = AlloUsage(from_date=self.from_date, to_date=self.to_date)
 
-        usage1 = allo1.get_ts(['allo', 'usage', 'usage_est'], 'D', ['wap'])
+        usage1 = allo1.get_ts(['allo', 'sd_rates'], 'D', ['wap'])
         usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].copy()
-        if 'sw_usage_est' not in usage1a.columns:
-            usage1a['sw_usage_est'] = 0
-        usage2 = usage1a[['sw_allo', 'sw_usage', 'sw_usage_est']].reset_index().copy()
+        if 'sd_rate' not in usage1a.columns:
+            usage1a['sd_rate'] = 0
+        usage2 = usage1a[['sw_allo', 'sd_rate']].reset_index().copy()
 
         usage3 = pd.merge(waps_catch[['wap', 'station_id', 'wap_stn_id']], usage2, on='wap')
 
         ## Aggregate by flow station id and date
-        usage4 = usage3.groupby(['station_id', 'date'])[['sw_allo', 'sw_usage', 'sw_usage_est']].sum()
+        usage4 = usage3.groupby(['station_id', 'date'])[['sw_allo', 'sd_rate']].sum()
         usage5 = (usage4 / 24 / 60 / 60).round(3)
         # usage5 = usage4.copy()
 
         # usage5.loc[(usage5['sw_usage'] > 0) & (usage5['sw_usage_est'] > 0), 'sw_usage_est'] = 0
 
-        usage5.rename(columns={'sw_allo': 'allocation', 'sw_usage': 'measured usage', 'sw_usage_est': 'estimated usage'}, inplace=True)
+        usage5.rename(columns={'sw_allo': 'allocation', 'sd_rate': 'stream depletion'}, inplace=True)
 
         ## Aggregate by flow station id, wap station id, and date
-        usage6 = usage3.groupby(['station_id', 'wap_stn_id', 'date'])[['sw_allo', 'sw_usage', 'sw_usage_est']].sum()
+        usage6 = usage3.groupby(['station_id', 'wap_stn_id', 'date'])[['sw_allo', 'sd_rate']].sum()
         usage7 = (usage6 / 24 / 60 / 60).round(3)
         # usage5 = usage4.copy()
 
         # usage7.loc[(usage6['sw_usage'] > 0) & (usage6['sw_usage_est'] > 0), 'sw_usage_est'] = 0
 
-        usage7.rename(columns={'sw_allo': 'allocation', 'sw_usage': 'measured usage', 'sw_usage_est': 'estimated usage'}, inplace=True)
+        usage7.rename(columns={'sw_allo': 'allocation', 'sd_rate': 'stream depletion'}, inplace=True)
 
         ## Save results
         if hasattr(self, 'output_path'):
@@ -824,11 +824,12 @@ class FlowNat(object):
             flow1.columns = ['date', 'station_id', 'flow']
 
             flow2 = pd.merge(flow1, usage_daily_rate, on=['station_id', 'date'], how='left').set_index(['station_id', 'date']).sort_index()
-            flow2.loc[flow2['measured usage'].isnull(), 'measured usage'] = 0
-            flow2.loc[flow2['estimated usage'].isnull(), 'estimated usage'] = 0
+            flow2.loc[flow2['stream depletion'].isnull(), 'stream depletion'] = 0
+            # flow2.loc[flow2['estimated usage'].isnull(), 'estimated usage'] = 0
             flow2.loc[flow2['allocation'].isnull(), 'allocation'] = 0
 
-        flow2['nat flow'] = flow2['flow'] + flow2['measured usage'] + flow2['estimated usage']
+        # flow2['nat flow'] = flow2['flow'] + flow2['measured usage'] + flow2['estimated usage']
+        flow2['nat flow'] = flow2['flow'] + flow2['stream depletion']
 
         ## Use the reference identifier instead of station_ids
         ref_mapping = self.stations.set_index('station_id')['ref'].to_dict()
@@ -884,8 +885,8 @@ class FlowNat(object):
 
         meas_usage = go.Scattergl(
             x=nat_flow1.index,
-            y=nat_flow1['measured usage'],
-            name = 'Measured Stream Usage',
+            y=nat_flow1['stream depletion'],
+            name = 'Stream Depletion',
             line = dict(color = colors1[1]),
             opacity = 0.8)
 

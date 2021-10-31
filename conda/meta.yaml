@@ -1,6 +1,6 @@
 {% set name = "nz-flow-naturalisation" %}
-{% set version = "0.1.0" %}
-{% set sha256 = "5f1ba21a9bc07c95ea1940d52c054a29c6982b922774a3f569cb18c45a00a97a" %}
+{% set version = "0.1.1" %}
+# {% set sha256 = "5f1ba21a9bc07c95ea1940d52c054a29c6982b922774a3f569cb18c45a00a97a" %}
 
 # sha256 is the prefered checksum -- you can get it for a file with:
 #  `openssl sha256 <file name>`.
@@ -17,7 +17,7 @@ source:
   # If getting the source from GitHub remove the line above
   # uncomment the line below and modify as needed
   # url: https://github.com/simplejson/{{ name }}/archive/{{ version }}.tar.gz
-  sha256: {{ sha256 }}
+  # sha256: {{ sha256 }}
 
 build:
   # Uncomment the following line if the package is pure python and the recipe is exactly the same for all platforms.
