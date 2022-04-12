@@ -19,6 +19,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
 from multiprocessing.pool import ThreadPool
+import zstandard as zstd
 import pyproj
 try:
     import plotly.offline as py
@@ -40,7 +41,7 @@ with open(os.path.join(base_dir, 'parameters.yml')) as param2:
 # datasets_path = os.path.join(base_dir, 'datasets')
 outputs = param['output']
 
-catch_key_base = 'tethys/station_misc/{station_id}/catchment.geojson.zst'
+catch_key_base = 'tethys/station_misc/{station_id}.catchment.geojson.zst'
 
 ####################################
 ### Testing
@@ -237,7 +238,7 @@ class FlowNat(object):
         tethys1 = Tethys([self.flow_remote])
 
         flow_ds = [ds for ds in tethys1.datasets if (ds['parameter'] == 'streamflow') and (ds['product_code'] == self.product_code) and (ds['frequency_interval'] == '24H') and (ds['utc_offset'] == '12H') and (ds['method'] == 'sensor_recording')]
-        flow_ds.extend([ds for ds in tethys1.datasets if (ds['parameter'] == 'streamflow') and (ds['product_code'] == self.product_code) and (ds['frequency_interval'] == 'T') and (ds['method'] == 'field_activity')])
+        flow_ds.extend([ds for ds in tethys1.datasets if (ds['parameter'] == 'streamflow') and (ds['product_code'] == self.product_code) and (ds['frequency_interval'] == 'None') and (ds['method'] == 'field_activity')])
 
         stns_list = []
 
@@ -245,10 +246,10 @@ class FlowNat(object):
             stns1 = tethys1.get_stations(ds['dataset_id'])
             stns_list.extend(stns1)
 
-        stns_list2 = [s for s in stns_list if s['stats']['count'] >= self.min_gaugings]
+        stns_list2 = [s for s in stns_list if s['dimensions']['time'] >= self.min_gaugings]
         # stns_list2 = stns_list
 
-        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'min': s['stats']['min'], 'max': s['stats']['max'], 'count': s['stats']['count'], 'from_date': s['time_range']['from_date'], 'to_date': s['time_range']['to_date']} for s in stns_list2]
+        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'count': s['dimensions']['time'], 'from_date': s['time_range']['from_date'], 'to_date': s['time_range']['to_date']} for s in stns_list2]
         [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
@@ -402,11 +403,13 @@ class FlowNat(object):
         """
         station_id = inputs['station_id']
         bucket = inputs['bucket']
-        conn_config = inputs['conn_config']
+        public_url = inputs['public_url']
 
         key1 = catch_key_base.format(station_id=station_id)
         try:
-            obj1 = utils.get_object_s3(key1, conn_config, bucket, 'zstd', 0)
+            obj0 = utils.get_object_s3(key1, public_url=public_url, bucket=bucket, counter=1)
+            dctx = zstd.ZstdDecompressor()
+            obj1 = dctx.decompress(obj0)
             b2 = io.BytesIO(obj1)
             c1 = gpd.read_file(b2)
         except:
@@ -422,10 +425,10 @@ class FlowNat(object):
         stns = self.stations.copy()
         stn_ids = stns.station_id.unique()
 
-        conn_config = self.flow_remote['connection_config']
+        public_url = self.flow_remote['public_url']
         bucket = self.flow_remote['bucket']
 
-        input_list = [{'conn_config': conn_config, 'bucket': bucket, 'station_id': s} for s in stn_ids]
+        input_list = [{'public_url': public_url, 'bucket': bucket, 'station_id': s} for s in stn_ids]
 
         output = ThreadPool(threads).map(self._get_catchment, input_list)
 
@@ -596,9 +599,7 @@ class FlowNat(object):
         -------
         DataFrame of Flow
         """
-
         ### Prep the stations and other inputs
-
         flow_ds = self.flow_datasets.copy()
         tethys1 = self._tethys_flow
         stns = self.stations.copy()
@@ -634,7 +635,7 @@ class FlowNat(object):
             stns1 = stns[stns['dataset_id'] == ds_id].copy()
             stn_ids = stns1['station_id'].unique().tolist()
 
-            flow_data1 = tethys1.get_bulk_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
+            flow_data1 = tethys1.get_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
 
             val2 = flow_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
             flow_data = val2.drop('geometry', axis=1).dropna()
@@ -672,7 +673,7 @@ class FlowNat(object):
                 buff_sites = list(set(buff_sites_list))
 
                 ## Pull out recorder data needed for all manual sites
-                rec_data1 = tethys1.get_bulk_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
+                rec_data1 = tethys1.get_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, squeeze_dims=True, output='Dataset', threads=threads)
 
                 val2 = rec_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
                 rec_data = val2.drop('geometry', axis=1).dropna()
