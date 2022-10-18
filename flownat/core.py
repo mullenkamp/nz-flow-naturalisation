@@ -147,73 +147,12 @@ class FlowNat(object):
         setattr(self, 'product_code', product_code)
         setattr(self, 'local_tz', local_tz)
 
-
-        # setattr(self, 'rec_data_code', rec_data_code)
-        # setattr(self, 'ts_server', param['input']['ts_server'])
-        # setattr(self, 'permit_server', param['input']['permit_server'])
-
         self.save_path(output_path)
 
-        stns_summ = self.get_all_flow_stations()
+        _ = self.get_all_flow_stations()
 
         if (isinstance(station_id, list)) or (isinstance(ref, list)):
-            stns1 = self.process_stations(station_id=station_id, ref=ref)
-
-
-        # summ1 = self.flow_datasets(from_date=from_date, to_date=to_date, min_gaugings=8, rec_data_code=rec_data_code)
-        # if input_sites is not None:
-        #     input_summ1 = self.process_sites(input_sites)
-        #
-        # if not isinstance(catch_del, str):
-        #     raise ValueError('catch_del must be a string')
-        #
-        # if catch_del == 'rec':
-        #     self.load_rec()
-        # elif catch_del == 'internal':
-        #     catch_gdf_all = pd.read_pickle(os.path.join(base_dir, 'datasets', param['input']['catch_del_file']))
-        #     setattr(self, 'catch_gdf_all', catch_gdf_all)
-        # elif catch_del.endswith('shp'):
-        #     catch_gdf_all = gpd.read_file(catch_del)
-        #     setattr(self, 'catch_gdf_all', catch_gdf_all)
-        # else:
-        #     raise ValueError('Please read docstrings for options for catch_del argument')
-
-        pass
-
-
-    # def flow_datasets_all(self, rec_data_code='Primary'):
-    #     """
-    #
-    #     """
-    #     ## Get dataset types
-    #     datasets1 = mssql.rd_sql(self.ts_server, param['input']['ts_database'], param['input']['ts_dataset_table'], where_in={'Feature': ['River'], 'MeasurementType': ['Flow'], 'DataCode': ['Primary', 'RAW']})
-    #     man_datasets1 = datasets1[(datasets1['CollectionType'] == 'Manual Field') & (datasets1['DataCode'] == 'Primary')].copy()
-    #     rec_datasets1 = datasets1[(datasets1['CollectionType'] == 'Recorder') & (datasets1['DataCode'] == rec_data_code)].copy()
-    #
-    #     ## Get ts summaries
-    #     man_summ1 = mssql.rd_sql(self.ts_server, param['input']['ts_database'], param['input']['ts_summ_table'], ['ExtSiteID', 'DatasetTypeID', 'Min', 'Median', 'Mean', 'Max', 'Count', 'FromDate', 'ToDate'], where_in={'DatasetTypeID': man_datasets1['DatasetTypeID'].tolist()}).sort_values('ToDate')
-    #     man_summ2 = man_summ1.drop_duplicates(['ExtSiteID'], keep='last').copy()
-    #     man_summ2['CollectionType'] = 'Manual Field'
-    #
-    #     rec_summ1 = mssql.rd_sql(self.ts_server, param['input']['ts_database'], param['input']['ts_summ_table'], ['ExtSiteID', 'DatasetTypeID', 'Min', 'Median', 'Mean', 'Max', 'Count', 'FromDate', 'ToDate'], where_in={'DatasetTypeID': rec_datasets1['DatasetTypeID'].tolist()}).sort_values('ToDate')
-    #     rec_summ2 = rec_summ1.drop_duplicates(['ExtSiteID'], keep='last').copy()
-    #     rec_summ2['CollectionType'] = 'Recorder'
-    #
-    #     ## Combine
-    #     summ2 = pd.concat([man_summ2, rec_summ2], sort=False)
-    #
-    #     summ2['FromDate'] = pd.to_datetime(summ2['FromDate'])
-    #     summ2['ToDate'] = pd.to_datetime(summ2['ToDate'])
-    #
-    #     ## Add in site info
-    #     sites1 = mssql.rd_sql(self.ts_server, param['input']['ts_database'], param['input']['sites_table'], ['ExtSiteID', 'NZTMX', 'NZTMY', 'SwazGroupName', 'SwazName'])
-    #
-    #     summ3 = pd.merge(summ2, sites1, on='ExtSiteID')
-    #
-    #     ## Assign objects
-    #     setattr(self, 'sites', sites1)
-    #     setattr(self, 'rec_data_code', rec_data_code)
-    #     setattr(self, 'summ_all', summ3)
+            _ = self.process_stations(station_id=station_id, ref=ref)
 
 
     def get_all_flow_stations(self):
@@ -247,17 +186,16 @@ class FlowNat(object):
             stns_list.extend(stns1)
 
         stns_list2 = [s for s in stns_list if s['dimensions']['time'] >= self.min_gaugings]
-        # stns_list2 = stns_list
 
         stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'count': s['dimensions']['time'], 'from_date': s['time_range']['from_date'], 'to_date': s['time_range']['to_date']} for s in stns_list2]
         [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
-        stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
-        stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
-
-        # stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_localize(None)
-        # stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_localize(None)
+        try:
+            stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+            stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+        except:
+            pass
 
         if isinstance(self.from_date, str):
             from_date1 = pd.Timestamp(self.from_date)
@@ -269,6 +207,7 @@ class FlowNat(object):
         setattr(self, 'stations_all', stns_summ)
         setattr(self, '_tethys_flow', tethys1)
         setattr(self, 'flow_datasets_all', flow_ds)
+
         return stns_summ
 
 
@@ -284,9 +223,6 @@ class FlowNat(object):
 
             setattr(self, 'output_path', output_path)
 
-#        output_dict1 = {k: v.split('_{run_date}')[0] for k, v in param['output'].items()}
-
-#        file_list = [f for f in os.listdir(output_path) if ('catch_del' in f) and ('.shp' in f)]
 
     def process_stations(self, station_id=None, ref=None):
         """
@@ -302,11 +238,6 @@ class FlowNat(object):
         DataFrame
         """
         ## Checks
-        # if isinstance(input_sites, (str, int)):
-        #     input_sites = [input_sites]
-        # elif not isinstance(input_sites, list):
-        #     raise ValueError('input_sites must be a str, int, or list')
-
         if (not isinstance(station_id, list)) and (not isinstance(ref, list)):
             raise ValueError('station_id and ref must be lists')
 
@@ -336,7 +267,6 @@ class FlowNat(object):
 
         ## Drop duplicate stations
         stns2 = stns1.sort_values('count', ascending=False).drop_duplicates('station_id')
-        # stns2 = stns1.drop_duplicates('station_id')
 
         setattr(self, 'stations', stns2)
 
@@ -361,40 +291,6 @@ class FlowNat(object):
 
         return stns1
 
-
-    # def load_rec(self):
-    #     """
-    #
-    #     """
-    #
-    #     if not hasattr(self, 'rec_rivers'):
-    #         try:
-    #             with lzma.open(os.path.join(datasets_path, param['input']['rec_rivers_file'])) as r:
-    #                 rec_rivers = pickle.loads(r.read())
-    #             with lzma.open(os.path.join(datasets_path, param['input']['rec_catch_file'])) as r:
-    #                 rec_catch = pickle.loads(r.read())
-    #         except:
-    #             print('Downloading rivers and catchments files...')
-    #
-    #             url1 = 'https://cybele.s3.us-west.stackpathstorage.com/mfe;rec;v2.4;rivers.gpd.pkl.xz'
-    #             r_resp = requests.get(url1)
-    #             with open(os.path.join(datasets_path, param['input']['rec_rivers_file']), 'wb') as r:
-    #                 r.write(r_resp.content)
-    #             with lzma.open(os.path.join(datasets_path, param['input']['rec_rivers_file'])) as r:
-    #                 rec_rivers = pickle.loads(r.read())
-    #
-    #             url2 = 'https://cybele.s3.us-west.stackpathstorage.com/mfe;rec;v2.4;catchments.gpd.pkl.xz'
-    #             r_resp = requests.get(url2)
-    #             with open(os.path.join(datasets_path, param['input']['rec_catch_file']), 'wb') as r:
-    #                 r.write(r_resp.content)
-    #             with lzma.open(os.path.join(datasets_path, param['input']['rec_catch_file'])) as r:
-    #                 rec_catch = pickle.loads(r.read())
-    #
-    #         rec_rivers.rename(columns={'order': 'ORDER'}, inplace=True)
-    #         setattr(self, 'rec_rivers', rec_rivers)
-    #         setattr(self, 'rec_catch', rec_catch)
-    #
-    #     pass
 
     @staticmethod
     def _get_catchment(inputs):
@@ -464,11 +360,12 @@ class FlowNat(object):
         [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
         stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
-        stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
-        stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
 
-        # stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_localize(None)
-        # stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_localize(None)
+        try:
+            stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+            stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+        except:
+            pass
 
         if isinstance(self.from_date, str):
             from_date1 = pd.Timestamp(self.from_date)
@@ -545,31 +442,24 @@ class FlowNat(object):
         wap_ids = waps2.wap.unique().tolist()
 
         allo1 = AlloUsage(wap_filter={'wap': wap_ids}, from_date=self.from_date, to_date=self.to_date)
-        # allo1 = AlloUsage(from_date=self.from_date, to_date=self.to_date)
 
         usage1 = allo1.get_ts(['allo', 'sd_rates'], 'D', ['wap'])
         usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].copy()
         if 'sd_rate' not in usage1a.columns:
             usage1a['sd_rate'] = 0
-        usage2 = usage1a[['sw_allo', 'sd_rate']].reset_index().copy()
+        usage2 = usage1a[['sw_allo', 'sd_rate']].reset_index()
 
         usage3 = pd.merge(waps_catch[['wap', 'station_id', 'wap_stn_id']], usage2, on='wap')
 
         ## Aggregate by flow station id and date
         usage4 = usage3.groupby(['station_id', 'date'])[['sw_allo', 'sd_rate']].sum()
         usage5 = (usage4 / 24 / 60 / 60).round(3)
-        # usage5 = usage4.copy()
-
-        # usage5.loc[(usage5['sw_usage'] > 0) & (usage5['sw_usage_est'] > 0), 'sw_usage_est'] = 0
 
         usage5.rename(columns={'sw_allo': 'allocation', 'sd_rate': 'stream depletion'}, inplace=True)
 
         ## Aggregate by flow station id, wap station id, and date
         usage6 = usage3.groupby(['station_id', 'wap_stn_id', 'date'])[['sw_allo', 'sd_rate']].sum()
         usage7 = (usage6 / 24 / 60 / 60).round(3)
-        # usage5 = usage4.copy()
-
-        # usage7.loc[(usage6['sw_usage'] > 0) & (usage6['sw_usage_est'] > 0), 'sw_usage_est'] = 0
 
         usage7.rename(columns={'sw_allo': 'allocation', 'sd_rate': 'stream depletion'}, inplace=True)
 
@@ -619,17 +509,7 @@ class FlowNat(object):
         else:
             to_date1 = pd.Timestamp(self.to_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
 
-        # if self.from_date is None:
-        #     from_date1 = None
-        # else:
-        #     from_date1 = pd.Timestamp(self.from_date)
-        # if self.to_date is None:
-        #     to_date1 = None
-        # else:
-        #     to_date1 = pd.Timestamp(self.to_date)
-
         ### Iterate through the two datasets
-
         for ds in flow_ds:
             ds_id = ds['dataset_id']
             stns1 = stns[stns['dataset_id'] == ds_id].copy()
@@ -640,17 +520,7 @@ class FlowNat(object):
             val2 = flow_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
             flow_data = val2.drop('geometry', axis=1).dropna()
 
-            # data_list = []
-            # for k, val in flow_data1.items():
-            #     # print(k)
-            #     val1 = val.squeeze('height').drop_vars('height')
-            #     val2 = val1.to_dataframe().reset_index()
-            #     val2['station_id'] = k
-            #     data_list.append(val2)
-
-            # flow_data = pd.concat(data_list)
             flow_data['time'] = flow_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
-            # flow_data['time'] = flow_data['time'].dt.tz_localize(None).dt.floor('D')
 
             flow_data = flow_data.groupby(['station_id', 'time']).mean().reset_index()
 
@@ -678,15 +548,6 @@ class FlowNat(object):
                 val2 = rec_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
                 rec_data = val2.drop('geometry', axis=1).dropna()
 
-                # data_list = []
-                # for k, val in rec_data1.items():
-                #     # print(k)
-                #     val1 = val.squeeze('height').drop_vars('height')
-                #     val2 = val1.to_dataframe().reset_index()
-                #     val2['station_id'] = k
-                #     data_list.append(val2)
-
-                # rec_data = pd.concat(data_list)
                 rec_data['time'] = rec_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
                 rec_data1 = rec_data.groupby(['station_id', 'time']).mean()
                 rec_data1 = rec_data1['streamflow'].unstack(0).interpolate('time', limit=10)
@@ -801,8 +662,6 @@ class FlowNat(object):
         else:
             flow = self.flow.copy()
 
-        # waps1 = self.waps_gdf.drop(['geometry', 'SwazGroupName', 'SwazName'], axis=1).copy()
-
         if usage_daily_rate.empty:
             flow2 = flow.stack().reset_index()
             flow2.columns = ['date', 'station_id', 'flow']
@@ -810,17 +669,7 @@ class FlowNat(object):
             flow2['sw_usage'] = 0
         else:
 
-            ## Combine usage with site data
-
-    #        print('-> Combine usage with site data')
-
-            # usage_rate3 = pd.merge(waps1, usage_daily_rate, on='Wap')
-            #
-            # site_rate = usage_rate3.groupby(['ExtSiteID', 'Date'])[['SwUsageRate']].sum().reset_index()
-
             ## Add usage to flow
-    #        print('-> Add usage to flow')
-
             flow1 = flow.stack().reset_index()
             flow1.columns = ['date', 'station_id', 'flow']
 
@@ -829,12 +678,9 @@ class FlowNat(object):
             # flow2.loc[flow2['estimated usage'].isnull(), 'estimated usage'] = 0
             flow2.loc[flow2['allocation'].isnull(), 'allocation'] = 0
 
-        # flow2['nat flow'] = flow2['flow'] + flow2['measured usage'] + flow2['estimated usage']
         flow2['nat flow'] = flow2['flow'] + flow2['stream depletion']
 
         ## Use the reference identifier instead of station_ids
-        ref_mapping = self.stations.set_index('station_id')['ref'].to_dict()
-
         flow3 = pd.merge(flow2.reset_index(), self.stations[['station_id', 'ref']], on='station_id').drop('station_id', axis=1)
         flow4 = flow3.groupby(['ref', 'date']).mean()
 
