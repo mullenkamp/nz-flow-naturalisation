@@ -10,8 +10,6 @@ import requests
 from gistools import vector
 from allotools import AlloUsage
 from hydrolm import LM
-from tethysts import Tethys
-from tethysts import utils
 import os
 import sys
 import yaml
@@ -21,6 +19,9 @@ from shapely.geometry import Point
 from multiprocessing.pool import ThreadPool
 import zstandard as zstd
 import pyproj
+import nzrec
+import booklet
+
 try:
     import plotly.offline as py
     import plotly.graph_objs as go
@@ -31,17 +32,17 @@ except:
 ### Parameters
 
 # base_dir = os.path.dirname(os.path.abspath( __file__ ))
-base_dir = os.path.realpath(os.path.dirname(__file__))
+# base_dir = os.path.realpath(os.path.dirname(__file__))
 
-print(base_dir)
+# print(base_dir)
 
-with open(os.path.join(base_dir, 'parameters.yml')) as param2:
-    param = yaml.safe_load(param2)
+# with open(os.path.join(base_dir, 'parameters.yml')) as param2:
+#     param = yaml.safe_load(param2)
 
-# datasets_path = os.path.join(base_dir, 'datasets')
-outputs = param['output']
+# # datasets_path = os.path.join(base_dir, 'datasets')
+# outputs = param['output']
 
-catch_key_base = 'tethys/station_misc/{station_id}.catchment.geojson.zst'
+# catch_key_base = 'tethys/station_misc/{station_id}.catchment.geojson.zst'
 
 ####################################
 ### Testing
@@ -54,8 +55,15 @@ catch_key_base = 'tethys/station_misc/{station_id}.catchment.geojson.zst'
 # flow_remote = param1['remote']['flow']
 # usage_remote = param1['remote']['usage']
 #
+
+# flow_stations_path = '/home/mike/git/HRC-flow-nat/data/flow_sites.gpkg'
+# flow_data_path = '/home/mike/git/HRC-flow-nat/data/flow_data_daily.blt'
+# permits_path = '/home/mike/git/HRC-flow-nat/data/permits.blt'
+# usage_path = '/home/mike/git/HRC-flow-nat/data/abstraction_data_daily.blt'
+# nzrec_path = '/home/mike/git/nzrec/data'
+
+
 # from_date='2010-07-01'
-# from_date=None
 # to_date='2020-06-30'
 # product_code='quality_controlled_data'
 # min_gaugings=10
@@ -111,9 +119,7 @@ class FlowNat(object):
     -------
     FlowNat instance
     """
-
-
-    def __init__(self, flow_remote, usage_remote, from_date=None, to_date=None, product_code='quality_controlled_data', min_gaugings=10, station_id=None, ref=None, output_path=None, local_tz='Etc/GMT-12'):
+    def __init__(self, flow_stations_path, flow_data_path, permits_path, usage_path, nzrec_path, from_date=None, to_date=None, use_type_mapping={}, default_sd_ratio=0.35, output_path=None):
         """
         Class to perform several operations to ultimately naturalise flow data.
         Initialise the class with the following parameters.
@@ -141,18 +147,44 @@ class FlowNat(object):
         """
         setattr(self, 'from_date', from_date)
         setattr(self, 'to_date', to_date)
-        setattr(self, 'min_gaugings', min_gaugings)
-        setattr(self, 'flow_remote', flow_remote)
-        setattr(self, 'usage_remote', usage_remote)
-        setattr(self, 'product_code', product_code)
-        setattr(self, 'local_tz', local_tz)
+        # setattr(self, 'min_gaugings', min_gaugings)
+        # setattr(self, 'flow_remote', flow_remote)
+        # setattr(self, 'usage_remote', usage_remote)
+        # setattr(self, 'product_code', product_code)
+        # setattr(self, 'local_tz', local_tz)
+
+        self.flow_stations_path = flow_stations_path
+        self.flow_data_path = flow_data_path
+        self.permits_path = permits_path
+        self.usage_path = usage_path
+        self.nzrec_path = nzrec_path
+        self.default_sd_ratio = default_sd_ratio
+        self.use_type_mapping = use_type_mapping
 
         self.save_path(output_path)
 
         _ = self.get_all_flow_stations()
 
-        if (isinstance(station_id, list)) or (isinstance(ref, list)):
-            _ = self.process_stations(station_id=station_id, ref=ref)
+        allo0 = AlloUsage(permits_path, usage_path, from_date, to_date, use_type_mapping=use_type_mapping, default_sd_ratio=default_sd_ratio)
+
+        self.waps_all = vector.xy_to_gpd(['permit_id', 'wap', 'sd_ratio'], 'lon', 'lat', allo0.waps, 4326)
+        self.permits_all = allo0.permits
+
+        # if (isinstance(station_id, list)) or (isinstance(ref, list)):
+        #     _ = self.process_stations(station_id=station_id, ref=ref)
+
+
+    def save_path(self, output_path=None):
+        """
+    
+        """
+        if output_path is None:
+            pass
+        elif isinstance(output_path, str):
+            if not os.path.exists(output_path):
+                os.makedirs(output_path)
+    
+            setattr(self, 'output_path', output_path)
 
 
     def get_all_flow_stations(self):
@@ -174,57 +206,46 @@ class FlowNat(object):
         -------
         DataFrame
         """
-        tethys1 = Tethys([self.flow_remote])
+        # tethys1 = Tethys([self.flow_remote])
 
-        flow_ds = [ds for ds in tethys1.datasets if (ds['parameter'] == 'streamflow') and (ds['product_code'] == self.product_code) and (ds['frequency_interval'] == '24H') and (ds['utc_offset'] == '12H') and (ds['method'] == 'sensor_recording')]
-        flow_ds.extend([ds for ds in tethys1.datasets if (ds['parameter'] == 'streamflow') and (ds['product_code'] == self.product_code) and (ds['frequency_interval'] == 'None') and (ds['method'] == 'field_activity')])
+        # flow_ds = [ds for ds in tethys1.datasets if (ds['parameter'] == 'streamflow') and (ds['product_code'] == self.product_code) and (ds['frequency_interval'] == '24H') and (ds['utc_offset'] == '12H') and (ds['method'] == 'sensor_recording')]
+        # flow_ds.extend([ds for ds in tethys1.datasets if (ds['parameter'] == 'streamflow') and (ds['product_code'] == self.product_code) and (ds['frequency_interval'] == 'None') and (ds['method'] == 'field_activity')])
 
-        stns_list = []
+        # stns_list = []
 
-        for ds in flow_ds:
-            stns1 = tethys1.get_stations(ds['dataset_id'])
-            stns_list.extend(stns1)
+        # for ds in flow_ds:
+        #     stns1 = tethys1.get_stations(ds['dataset_id'])
+        #     stns_list.extend(stns1)
 
-        stns_list2 = [s for s in stns_list if s['dimensions']['time'] >= self.min_gaugings]
+        # stns_list2 = [s for s in stns_list if s['dimensions']['time'] >= self.min_gaugings]
 
-        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'count': s['dimensions']['time'], 'from_date': s['time_range']['from_date'], 'to_date': s['time_range']['to_date']} for s in stns_list2]
-        [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
+        # stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'count': s['dimensions']['time'], 'from_date': s['time_range']['from_date'], 'to_date': s['time_range']['to_date']} for s in stns_list2]
+        # [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
 
-        stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
-        try:
-            stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
-            stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
-        except:
-            pass
+        # stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
+        # try:
+        #     stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+        #     stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+        # except:
+        #     pass
 
-        if isinstance(self.from_date, str):
-            from_date1 = pd.Timestamp(self.from_date)
-            stns_summ = stns_summ[stns_summ['from_date'] <= from_date1]
-        if isinstance(self.to_date, str):
-            to_date1 = pd.Timestamp(self.to_date)
-            stns_summ = stns_summ[stns_summ['to_date'] >= to_date1]
+        # if isinstance(self.from_date, str):
+        #     from_date1 = pd.Timestamp(self.from_date)
+        #     stns_summ = stns_summ[stns_summ['from_date'] <= from_date1]
+        # if isinstance(self.to_date, str):
+        #     to_date1 = pd.Timestamp(self.to_date)
+        #     stns_summ = stns_summ[stns_summ['to_date'] >= to_date1]
 
-        setattr(self, 'stations_all', stns_summ)
-        setattr(self, '_tethys_flow', tethys1)
-        setattr(self, 'flow_datasets_all', flow_ds)
+        # setattr(self, 'stations_all', stns_summ)
+        # setattr(self, '_tethys_flow', tethys1)
+        # setattr(self, 'flow_datasets_all', flow_ds)
 
-        return stns_summ
+        self.stations_all = gpd.read_file(self.flow_stations_path)
 
-
-    def save_path(self, output_path=None):
-        """
-
-        """
-        if output_path is None:
-            pass
-        elif isinstance(output_path, str):
-            if not os.path.exists(output_path):
-                os.makedirs(output_path)
-
-            setattr(self, 'output_path', output_path)
+        return self.stations_all
 
 
-    def process_stations(self, station_id=None, ref=None):
+    def process_stations(self, station_ids=None, refs=None):
         """
         Function to process the sites.
 
@@ -238,44 +259,44 @@ class FlowNat(object):
         DataFrame
         """
         ## Checks
-        if (not isinstance(station_id, list)) and (not isinstance(ref, list)):
-            raise ValueError('station_id and ref must be lists')
+        # if (not isinstance(station_ids, list)) and (not isinstance(refs, list)):
+        #     raise ValueError('station_ids and refs must be lists')
 
         ## Filter
         stns1 = self.stations_all.copy()
 
         bad_stns = []
 
-        if isinstance(station_id, list):
-            stns1 = stns1[stns1['station_id'].isin(station_id)]
-            [bad_stns.extend([s['ref']]) for i, s in stns1.iterrows() if s['station_id'] not in station_id]
-        if isinstance(ref, list):
-            stns1 = stns1[stns1['ref'].isin(ref)]
-            [bad_stns.extend([s['ref']]) for i, s in stns1.iterrows() if s['ref'] not in ref]
+        if isinstance(station_ids, list):
+            stns1 = stns1[stns1['station_id'].isin(station_ids)]
+            [bad_stns.extend([s['ref']]) for i, s in stns1.iterrows() if s['station_id'] not in station_ids]
+        if isinstance(refs, list):
+            stns1 = stns1[stns1['ref'].isin(refs)]
+            [bad_stns.extend([s['ref']]) for i, s in stns1.iterrows() if s['ref'] not in refs]
 
         if bad_stns:
             print(', '.join(bad_stns) + ' stations are not available for naturalisation')
 
         ## Save if required
-        if hasattr(self, 'output_path'):
-            run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
-            flow_sites_shp = outputs['flow_sites_shp'].format(run_date=run_time)
-            save1 = stns1.copy()
-            save1['from_date'] = save1['from_date'].astype(str)
-            save1['to_date'] = save1['to_date'].astype(str)
-            save1.to_file(os.path.join(self.output_path, flow_sites_shp))
+        # if hasattr(self, 'output_path'):
+        #     run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
+        #     flow_sites_shp = outputs['flow_sites_shp'].format(run_date=run_time)
+        #     save1 = stns1.copy()
+        #     save1['from_date'] = save1['from_date'].astype(str)
+        #     save1['to_date'] = save1['to_date'].astype(str)
+        #     save1.to_file(os.path.join(self.output_path, flow_sites_shp))
 
         ## Drop duplicate stations
-        stns2 = stns1.sort_values('count', ascending=False).drop_duplicates('station_id')
+        stns2 = stns1.drop_duplicates('station_id')
 
         setattr(self, 'stations', stns2)
 
         ## Filter flow datasets
-        stn_ds = stns2['dataset_id'].unique()
-        flow_ds1 = self.flow_datasets_all.copy()
-        flow_ds2 = [ds for ds in flow_ds1 if ds['dataset_id'] in stn_ds]
+        # stn_ds = stns2['dataset_id'].unique()
+        # flow_ds1 = self.flow_datasets_all.copy()
+        # flow_ds2 = [ds for ds in flow_ds1 if ds['dataset_id'] in stn_ds]
 
-        setattr(self, 'flow_datasets', flow_ds2)
+        # setattr(self, 'flow_datasets', flow_ds2)
 
         ## Remove existing attributes if they exist
         if hasattr(self, 'catch'):
@@ -292,93 +313,119 @@ class FlowNat(object):
         return stns1
 
 
-    @staticmethod
-    def _get_catchment(inputs):
+    # @staticmethod
+    # def _get_catchment(inputs):
+    #     """
+
+    #     """
+    #     station_id = inputs['station_id']
+    #     bucket = inputs['bucket']
+    #     public_url = inputs['public_url']
+
+    #     key1 = catch_key_base.format(station_id=station_id)
+    #     try:
+    #         obj0 = utils.get_object_s3(key1, public_url=public_url, bucket=bucket, counter=1)
+    #         dctx = zstd.ZstdDecompressor()
+    #         obj1 = dctx.decompress(obj0)
+    #         b2 = io.BytesIO(obj1)
+    #         c1 = gpd.read_file(b2)
+    #     except:
+    #         c1 = gpd.GeoDataFrame(columns=['id', 'area', 'dataset_id', 'distance', 'nzsegment', 'ref', 'station_id', 'geometry'])
+
+    #     return c1
+
+
+    def get_catchments(self):
         """
 
         """
-        station_id = inputs['station_id']
-        bucket = inputs['bucket']
-        public_url = inputs['public_url']
+        if not hasattr(self, 'stations'):
+            raise ValueError('Please run the process_stations method.')
 
-        key1 = catch_key_base.format(station_id=station_id)
-        try:
-            obj0 = utils.get_object_s3(key1, public_url=public_url, bucket=bucket, counter=1)
-            dctx = zstd.ZstdDecompressor()
-            obj1 = dctx.decompress(obj0)
-            b2 = io.BytesIO(obj1)
-            c1 = gpd.read_file(b2)
-        except:
-            c1 = gpd.GeoDataFrame(columns=['id', 'area', 'dataset_id', 'distance', 'nzsegment', 'ref', 'station_id', 'geometry'])
-
-        return c1
-
-
-    def get_catchments(self, threads=30):
-        """
-
-        """
         stns = self.stations.copy()
-        stn_ids = stns.station_id.unique()
 
-        public_url = self.flow_remote['public_url']
-        bucket = self.flow_remote['bucket']
+        w0 = nzrec.Water(self.nzrec_path)
 
-        input_list = [{'public_url': public_url, 'bucket': bucket, 'station_id': s} for s in stn_ids]
+        catch_list = []
+        for i, row in stns.iterrows():
+            geo = row.geometry
+            stn_id = row.station_id
+            coords = np.asarray(geo.coords[0])
+            way0 = w0.nearest_way_within_catchments(coords, 0.1)
+            up0 = way0.upstream()
+            catch0 = up0.catchments().to_gpd()
+            catch0['station_id'] = stn_id
+            catch_list.append(catch0)
 
-        output = ThreadPool(threads).map(self._get_catchment, input_list)
-
-        catch1 = pd.concat(output).drop('id', axis=1)
-        catch1.crs = pyproj.CRS(2193)
-        catch1 = catch1.to_crs(4326)
-
-        ## Save if required
-        if hasattr(self, 'output_path'):
-            run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
-            catch_del_shp = outputs['catch_del_shp'].format(run_date=run_time)
-            catch1.to_file(os.path.join(self.output_path, catch_del_shp))
+        catch1 = pd.concat(catch_list).reset_index(drop=True)
 
         setattr(self, 'catch', catch1)
         return catch1
 
 
-    def get_waps(self):
-        """
 
-        """
-        tethys1 = Tethys([self.usage_remote])
 
-        usage_ds = [ds for ds in tethys1.datasets if (ds['parameter'] == 'water_use') and (ds['product_code'] == 'raw_data') and (ds['frequency_interval'] == '24H') and (ds['utc_offset'] == '12H') and (ds['method'] == 'sensor_recording')]
+        # stns = self.stations.copy()
+        # stn_ids = stns.station_id.unique()
 
-        stns_list = []
+        # public_url = self.flow_remote['public_url']
+        # bucket = self.flow_remote['bucket']
 
-        for ds in usage_ds:
-            stns1 = tethys1.get_stations(ds['dataset_id'])
-            stns_list.extend(stns1)
+        # input_list = [{'public_url': public_url, 'bucket': bucket, 'station_id': s} for s in stn_ids]
 
-        stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'from_date': s['time_range']['from_date'], 'to_date': s['time_range']['to_date']} for s in stns_list]
-        [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
+        # output = ThreadPool(threads).map(self._get_catchment, input_list)
 
-        stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
+        # catch1 = pd.concat(output).drop('id', axis=1)
+        # catch1.crs = pyproj.CRS(2193)
+        # catch1 = catch1.to_crs(4326)
 
-        try:
-            stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
-            stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
-        except:
-            pass
+        # ## Save if required
+        # if hasattr(self, 'output_path'):
+        #     run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
+        #     catch_del_shp = outputs['catch_del_shp'].format(run_date=run_time)
+        #     catch1.to_file(os.path.join(self.output_path, catch_del_shp))
 
-        if isinstance(self.from_date, str):
-            from_date1 = pd.Timestamp(self.from_date)
-            stns_summ = stns_summ[stns_summ['to_date'] >= from_date1]
-        if isinstance(self.to_date, str):
-            to_date1 = pd.Timestamp(self.to_date)
-            stns_summ = stns_summ[stns_summ['from_date'] <= to_date1]
+        # setattr(self, 'catch', catch1)
+        # return catch1
 
-        setattr(self, 'waps_all', stns_summ)
-        setattr(self, '_tethys_usage', tethys1)
-        setattr(self, 'usage_datasets', usage_ds)
 
-        return stns_summ
+    # def get_waps(self):
+    #     """
+
+    #     """
+    #     tethys1 = Tethys([self.usage_remote])
+
+    #     usage_ds = [ds for ds in tethys1.datasets if (ds['parameter'] == 'water_use') and (ds['product_code'] == 'raw_data') and (ds['frequency_interval'] == '24H') and (ds['utc_offset'] == '12H') and (ds['method'] == 'sensor_recording')]
+
+    #     stns_list = []
+
+    #     for ds in usage_ds:
+    #         stns1 = tethys1.get_stations(ds['dataset_id'])
+    #         stns_list.extend(stns1)
+
+    #     stns_list3 = [{'dataset_id': s['dataset_id'], 'station_id': s['station_id'], 'ref': s['ref'], 'geometry': Point(s['geometry']['coordinates']), 'from_date': s['time_range']['from_date'], 'to_date': s['time_range']['to_date']} for s in stns_list]
+    #     [s.update({'from_date': s['from_date'] + '+00:00', 'to_date': s['to_date'] + '+00:00'}) for s in stns_list3 if not '+00:00' in s['from_date']]
+
+    #     stns_summ = gpd.GeoDataFrame(pd.DataFrame(stns_list3), geometry='geometry', crs=4326)
+
+    #     try:
+    #         stns_summ['from_date'] = pd.to_datetime(stns_summ['from_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+    #         stns_summ['to_date'] = pd.to_datetime(stns_summ['to_date']).dt.tz_convert(self.local_tz).dt.tz_localize(None)
+    #     except:
+    #         pass
+
+    #     if isinstance(self.from_date, str):
+    #         from_date1 = pd.Timestamp(self.from_date)
+    #         stns_summ = stns_summ[stns_summ['to_date'] >= from_date1]
+    #     if isinstance(self.to_date, str):
+    #         to_date1 = pd.Timestamp(self.to_date)
+    #         stns_summ = stns_summ[stns_summ['from_date'] <= to_date1]
+
+    #     setattr(self, 'waps_all', stns_summ)
+    #     setattr(self, '_tethys_usage', tethys1)
+    #     setattr(self, 'usage_datasets', usage_ds)
+
+    #     return stns_summ
 
 
     def get_upstream_waps(self):
@@ -390,37 +437,34 @@ class FlowNat(object):
         DataFrame
             allocation data
         """
-        if not hasattr(self, 'waps_all'):
-            waps = self.get_waps()
-        else:
-            waps = self.waps_all.copy()
+        waps_all = self.waps_all.drop('permit_id', axis=1).drop_duplicates(subset='wap').to_crs(4326).copy()
 
         if not hasattr(self, 'catch'):
             catch1 = self.get_catchments()
         else:
             catch1 = self.catch.copy()
 
-        waps.rename(columns={'station_id': 'wap_stn_id', 'dataset_id': 'wap_ds_id', 'ref': 'wap'}, inplace=True)
+        # waps.rename(columns={'station_id': 'wap_stn_id', 'dataset_id': 'wap_ds_id', 'ref': 'wap'}, inplace=True)
 
         ### WAP selection
-        waps_catch, poly1 = vector.pts_poly_join(waps, catch1, 'station_id')
+        waps_catch, poly1 = vector.pts_poly_join(waps_all, catch1, 'station_id')
 
         ### Get crc data
         if waps_catch.empty:
-            print('No WAPs were found in the polygon(s)')
-        else:
-            waps_sel = waps[waps.wap_stn_id.isin(waps_catch.wap_stn_id.unique())].copy()
+            raise ValueError('No WAPs were found in the polygon(s)')
+        # else:
+        #     waps_sel = waps_all[waps_all.wap.isin(waps_catch.wap.unique())].copy()
 
             ## Save if required
-            if hasattr(self, 'output_path'):
-                run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
+            # if hasattr(self, 'output_path'):
+            #     run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
 
-                save1 = waps_sel.copy()
-                save1['from_date'] = save1['from_date'].astype(str)
-                save1['to_date'] = save1['to_date'].astype(str)
+            #     save1 = waps_sel.copy()
+            #     save1['from_date'] = save1['from_date'].astype(str)
+            #     save1['to_date'] = save1['to_date'].astype(str)
 
-                waps_shp = outputs['waps_shp'].format(run_date=run_time)
-                save1.to_file(os.path.join(self.output_path, waps_shp))
+            #     waps_shp = outputs['waps_shp'].format(run_date=run_time)
+            #     save1.to_file(os.path.join(self.output_path, waps_shp))
 
         ## Return
         setattr(self, 'waps_catch', waps_catch)
@@ -437,19 +481,19 @@ class FlowNat(object):
         else:
             waps_catch = self.waps_catch.copy()
 
-        waps2 = waps_catch.groupby(['wap_ds_id', 'wap_stn_id']).first().reset_index()
+        # waps2 = waps_catch.groupby(['wap_ds_id', 'wap_stn_id']).first().reset_index()
 
-        wap_ids = waps2.wap.unique().tolist()
+        wap_ids = waps_catch.wap.unique().tolist()
 
-        allo1 = AlloUsage(wap_filter={'wap': wap_ids}, from_date=self.from_date, to_date=self.to_date)
+        allo1 = AlloUsage(self.permits_path, self.usage_path, wap_filter={'wap': wap_ids}, from_date=self.from_date, to_date=self.to_date, use_type_mapping=self.use_type_mapping, default_sd_ratio=self.default_sd_ratio)
 
         usage1 = allo1.get_ts(['allo', 'sd_rates'], 'D', ['wap'])
-        usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].copy()
+        usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].dropna().copy()
         if 'sd_rate' not in usage1a.columns:
             usage1a['sd_rate'] = 0
         usage2 = usage1a[['sw_allo', 'sd_rate']].reset_index()
 
-        usage3 = pd.merge(waps_catch[['wap', 'station_id', 'wap_stn_id']], usage2, on='wap')
+        usage3 = pd.merge(waps_catch[['wap', 'station_id']], usage2, on='wap')
 
         ## Aggregate by flow station id and date
         usage4 = usage3.groupby(['station_id', 'date'])[['sw_allo', 'sd_rate']].sum()
@@ -458,17 +502,17 @@ class FlowNat(object):
         usage5.rename(columns={'sw_allo': 'allocation', 'sd_rate': 'stream depletion'}, inplace=True)
 
         ## Aggregate by flow station id, wap station id, and date
-        usage6 = usage3.groupby(['station_id', 'wap_stn_id', 'date'])[['sw_allo', 'sd_rate']].sum()
+        usage6 = usage3.groupby(['station_id', 'wap', 'date'])[['sw_allo', 'sd_rate']].sum()
         usage7 = (usage6 / 24 / 60 / 60).round(3)
 
         usage7.rename(columns={'sw_allo': 'allocation', 'sd_rate': 'stream depletion'}, inplace=True)
 
         ## Save results
-        if hasattr(self, 'output_path'):
-            run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
+        # if hasattr(self, 'output_path'):
+        #     run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
 
-            usage_rate_wap_csv = outputs['usage_rate_wap_csv'].format(run_date=run_time)
-            usage1.to_csv(os.path.join(self.output_path, usage_rate_wap_csv))
+        #     usage_rate_wap_csv = outputs['usage_rate_wap_csv'].format(run_date=run_time)
+        #     usage1.to_csv(os.path.join(self.output_path, usage_rate_wap_csv))
 
         setattr(self, 'usage_rate', usage5.reset_index())
         setattr(self, 'usage_rate_wap', usage7.reset_index())
@@ -476,7 +520,7 @@ class FlowNat(object):
         return usage5.reset_index()
 
 
-    def get_flow(self, buffer_dis=60000, threads=30):
+    def get_flow(self, buffer_dis=60000):
         """
         Function to query and/or estimate flow at the input_sites.
 
@@ -489,6 +533,13 @@ class FlowNat(object):
         -------
         DataFrame of Flow
         """
+        flow_list = []
+        with booklet.open(self.flow_data_path) as f:
+            for stn_id, data in f.items():
+                d
+
+
+
         ### Prep the stations and other inputs
         flow_ds = self.flow_datasets.copy()
         tethys1 = self._tethys_flow
