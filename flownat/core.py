@@ -6,27 +6,21 @@ Created on Tue Jul  2 09:04:41 2019
 """
 import io
 import numpy as np
-import requests
 from gistools import vector
 from allotools import AlloUsage
-from hydrolm import LM
+# from hydrolm import LM
 import os
 import sys
-import yaml
 import pandas as pd
 import geopandas as gpd
-from shapely.geometry import Point
-from multiprocessing.pool import ThreadPool
-import zstandard as zstd
-import pyproj
 import nzrec
 import booklet
 
-try:
-    import plotly.offline as py
-    import plotly.graph_objs as go
-except:
-    print('install plotly for plot functions to work')
+# try:
+#     import plotly.offline as py
+#     import plotly.graph_objs as go
+# except:
+#     print('install plotly for plot functions to work')
 
 #####################################
 ### Parameters
@@ -287,7 +281,7 @@ class FlowNat(object):
         #     save1.to_file(os.path.join(self.output_path, flow_sites_shp))
 
         ## Drop duplicate stations
-        stns2 = stns1.drop_duplicates('station_id')
+        stns2 = stns1.drop_duplicates('station_id').rename(columns={'SiteName': 'ref'})
 
         setattr(self, 'stations', stns2)
 
@@ -535,164 +529,174 @@ class FlowNat(object):
         """
         flow_list = []
         with booklet.open(self.flow_data_path) as f:
+            # print(list(f.keys()))
             for stn_id, data in f.items():
-                d
+                data0 = data.set_index('time').loc[slice(self.from_date, self.to_date)]
+                if not data0.empty:
+                    flow_list.append(data0)
 
-
-
-        ### Prep the stations and other inputs
-        flow_ds = self.flow_datasets.copy()
-        tethys1 = self._tethys_flow
-        stns = self.stations.copy()
-        rec_ds_id = [ds for ds in self.flow_datasets_all if ds['method'] == 'sensor_recording'][0]['dataset_id']
-        man_ds_id = [ds for ds in self.flow_datasets_all if ds['method'] == 'field_activity'][0]['dataset_id']
-
-        methods = [m['method'] for m in flow_ds]
-
-        rec_stns = self.stations_all[self.stations_all.dataset_id == rec_ds_id].to_crs(2193).copy()
-
-        if self.from_date is None:
-            from_date1 = None
-        else:
-            from_date1 = pd.Timestamp(self.from_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
-        if self.to_date is None:
-            to_date1 = None
-        else:
-            to_date1 = pd.Timestamp(self.to_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
-
-        ### Iterate through the two datasets
-        for ds in flow_ds:
-            ds_id = ds['dataset_id']
-            stns1 = stns[stns['dataset_id'] == ds_id].copy()
-            stn_ids = stns1['station_id'].unique().tolist()
-
-            flow_data1 = tethys1.get_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, squeeze_dims=True, threads=threads)
-
-            val2 = flow_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
-            flow_data = val2.drop('geometry', axis=1).dropna()
-
-            flow_data['time'] = flow_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
-
-            flow_data = flow_data.groupby(['station_id', 'time']).mean().reset_index()
-
-            if ds['method'] == 'field_activity':
-
-                man_ts_data2 = flow_data.set_index(['station_id', 'time'])['streamflow'].unstack(0)
-
-                ## Determine which sites are within the buffer of the manual sites
-                man_stns = stns[stns['dataset_id'] == man_ds_id].to_crs(2193).copy()
-                man_stns.set_index('station_id', inplace=True)
-                man_stns['geometry'] = man_stns.buffer(buffer_dis)
-
-                buff_sites_dict = {}
-
-                for index in man_stns.index:
-                    buff_sites1 = vector.sel_sites_poly(rec_stns, man_stns.loc[[index]])
-                    buff_sites_dict[index] = buff_sites1['station_id'].tolist()
-
-                buff_sites_list = [item for sublist in buff_sites_dict.values() for item in sublist]
-                buff_sites = list(set(buff_sites_list))
-
-                ## Pull out recorder data needed for all manual sites
-                rec_data1 = tethys1.get_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, squeeze_dims=True, threads=threads)
-
-                val2 = rec_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
-                rec_data = val2.drop('geometry', axis=1).dropna()
-
-                rec_data['time'] = rec_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
-                rec_data1 = rec_data.groupby(['station_id', 'time']).mean()
-                rec_data1 = rec_data1['streamflow'].unstack(0).interpolate('time', limit=10)
-
-                ## Run through regressions
-                reg_lst = []
-                new_lst = []
-
-                for key, lst in buff_sites_dict.items():
-                    # print(key)
-                    man_rec_ts_data3 = rec_data1.loc[:, rec_data1.columns.isin(lst)].copy()
-                    man_rec_ts_data3[man_rec_ts_data3 <= 0] = np.nan
-
-                    man_ts_data3 = man_ts_data2.loc[:, [key]].copy()
-                    man_ts_data3[man_ts_data3 <= 0] = np.nan
-
-                    lm1 = LM(man_rec_ts_data3, man_ts_data3)
-                    res1 = lm1.predict(n_ind=1, x_transform='log', y_transform='log', min_obs=self.min_gaugings)
-                    if res1 is None:
-                        continue
-
-                    res1_f = res1.summary_df['f value'].iloc[0]
-                    res2 = lm1.predict(n_ind=2, x_transform='log', y_transform='log', min_obs=self.min_gaugings)
-                    if res2 is not None:
-                        res2_f = res2.summary_df['f value'].iloc[0]
-                    else:
-                        res2_f = 0
-
-                    f = [res1_f, res2_f]
-
-                    val = f.index(max(f))
-
-                    if val == 0:
-                        reg_lst.append(res1.summary_df)
-
-                        s1 = res1.summary_df.iloc[0]
-
-                        d1 = man_rec_ts_data3[s1['x sites']].copy()
-                        d1[d1 <= 0] = 0.001
-
-                        new_data1 = np.exp(np.log(d1) * float(s1['x slopes']) + float(s1['y intercept']))
-                        new_data1.name = key
-                        new_data1[new_data1 <= 0] = 0
-                    else:
-                        reg_lst.append(res2.summary_df)
-
-                        s1 = res2.summary_df.iloc[0]
-                        x_sites = s1['x sites'].split(', ')
-                        x_slopes = [float(s) for s in s1['x slopes'].split(', ')]
-                        intercept = float(s1['y intercept'])
-
-                        d1 = man_rec_ts_data3[x_sites[0]].copy()
-                        d1[d1 <= 0] = 0.001
-                        d2 = man_rec_ts_data3[x_sites[1]].copy()
-                        d2[d2 <= 0] = 0.001
-
-                        new_data1 = np.exp((np.log(d1) * float(x_slopes[0])) + (np.log(d2) * float(x_slopes[1])) + intercept)
-                        new_data1.name = key
-                        new_data1[new_data1 <= 0] = 0
-
-                    new_lst.append(new_data1)
-
-                new_data2 = pd.concat(new_lst, axis=1)
-                reg_df = pd.concat(reg_lst).reset_index()
-
-            elif ds['method'] == 'sensor_recording':
-                rec_flow_data = flow_data.set_index(['station_id', 'time'])['streamflow'].unstack(0)
-            else:
-                raise ValueError('The dataset method should be either field_activity or sensor_recording.')
-
-        if not 'sensor_recording' in methods:
-            flow = new_data2.round(3)
-        elif not 'field_activity' in methods:
-            flow = rec_flow_data.round(3)
-            reg_df = pd.DataFrame()
-        else:
-            flow = pd.concat([rec_flow_data, new_data2], axis=1).round(3)
-
-        ## Save if required
-        if hasattr(self, 'output_path'):
-            run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
-
-            # stns
-
-            if not reg_df.empty:
-                reg_flow_csv = outputs['reg_flow_csv'].format(run_date=run_time)
-                reg_df.to_csv(os.path.join(self.output_path, reg_flow_csv), index=False)
-
-            flow_csv = outputs['flow_csv'].format(run_date=run_time)
-            flow.to_csv(os.path.join(self.output_path, flow_csv))
+        flow = pd.concat(flow_list, axis=1)
 
         setattr(self, 'flow', flow)
-        setattr(self, 'reg_flow', reg_df)
+        # setattr(self, 'reg_flow', reg_df)
         return flow
+
+
+
+
+        # ### Prep the stations and other inputs
+        # flow_ds = self.flow_datasets.copy()
+        # tethys1 = self._tethys_flow
+        # stns = self.stations.copy()
+        # rec_ds_id = [ds for ds in self.flow_datasets_all if ds['method'] == 'sensor_recording'][0]['dataset_id']
+        # man_ds_id = [ds for ds in self.flow_datasets_all if ds['method'] == 'field_activity'][0]['dataset_id']
+
+        # methods = [m['method'] for m in flow_ds]
+
+        # rec_stns = self.stations_all[self.stations_all.dataset_id == rec_ds_id].to_crs(2193).copy()
+
+        # if self.from_date is None:
+        #     from_date1 = None
+        # else:
+        #     from_date1 = pd.Timestamp(self.from_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
+        # if self.to_date is None:
+        #     to_date1 = None
+        # else:
+        #     to_date1 = pd.Timestamp(self.to_date, tz=self.local_tz).tz_convert('utc').tz_localize(None)
+
+        # ### Iterate through the two datasets
+        # for ds in flow_ds:
+        #     ds_id = ds['dataset_id']
+        #     stns1 = stns[stns['dataset_id'] == ds_id].copy()
+        #     stn_ids = stns1['station_id'].unique().tolist()
+
+        #     flow_data1 = tethys1.get_results(ds_id, stn_ids, from_date=from_date1, to_date=to_date1, squeeze_dims=True, threads=threads)
+
+        #     val2 = flow_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
+        #     flow_data = val2.drop('geometry', axis=1).dropna()
+
+        #     flow_data['time'] = flow_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
+
+        #     flow_data = flow_data.groupby(['station_id', 'time']).mean().reset_index()
+
+        #     if ds['method'] == 'field_activity':
+
+        #         man_ts_data2 = flow_data.set_index(['station_id', 'time'])['streamflow'].unstack(0)
+
+        #         ## Determine which sites are within the buffer of the manual sites
+        #         man_stns = stns[stns['dataset_id'] == man_ds_id].to_crs(2193).copy()
+        #         man_stns.set_index('station_id', inplace=True)
+        #         man_stns['geometry'] = man_stns.buffer(buffer_dis)
+
+        #         buff_sites_dict = {}
+
+        #         for index in man_stns.index:
+        #             buff_sites1 = vector.sel_sites_poly(rec_stns, man_stns.loc[[index]])
+        #             buff_sites_dict[index] = buff_sites1['station_id'].tolist()
+
+        #         buff_sites_list = [item for sublist in buff_sites_dict.values() for item in sublist]
+        #         buff_sites = list(set(buff_sites_list))
+
+        #         ## Pull out recorder data needed for all manual sites
+        #         rec_data1 = tethys1.get_results(rec_ds_id, buff_sites, from_date=from_date1, to_date=to_date1, squeeze_dims=True, threads=threads)
+
+        #         val2 = rec_data1[['streamflow', 'station_id']].drop('height').to_dataframe().reset_index()
+        #         rec_data = val2.drop('geometry', axis=1).dropna()
+
+        #         rec_data['time'] = rec_data['time'].dt.tz_localize('utc').dt.tz_convert(self.local_tz).dt.tz_localize(None).dt.floor('D')
+        #         rec_data1 = rec_data.groupby(['station_id', 'time']).mean()
+        #         rec_data1 = rec_data1['streamflow'].unstack(0).interpolate('time', limit=10)
+
+        #         ## Run through regressions
+        #         reg_lst = []
+        #         new_lst = []
+
+        #         for key, lst in buff_sites_dict.items():
+        #             # print(key)
+        #             man_rec_ts_data3 = rec_data1.loc[:, rec_data1.columns.isin(lst)].copy()
+        #             man_rec_ts_data3[man_rec_ts_data3 <= 0] = np.nan
+
+        #             man_ts_data3 = man_ts_data2.loc[:, [key]].copy()
+        #             man_ts_data3[man_ts_data3 <= 0] = np.nan
+
+        #             lm1 = LM(man_rec_ts_data3, man_ts_data3)
+        #             res1 = lm1.predict(n_ind=1, x_transform='log', y_transform='log', min_obs=self.min_gaugings)
+        #             if res1 is None:
+        #                 continue
+
+        #             res1_f = res1.summary_df['f value'].iloc[0]
+        #             res2 = lm1.predict(n_ind=2, x_transform='log', y_transform='log', min_obs=self.min_gaugings)
+        #             if res2 is not None:
+        #                 res2_f = res2.summary_df['f value'].iloc[0]
+        #             else:
+        #                 res2_f = 0
+
+        #             f = [res1_f, res2_f]
+
+        #             val = f.index(max(f))
+
+        #             if val == 0:
+        #                 reg_lst.append(res1.summary_df)
+
+        #                 s1 = res1.summary_df.iloc[0]
+
+        #                 d1 = man_rec_ts_data3[s1['x sites']].copy()
+        #                 d1[d1 <= 0] = 0.001
+
+        #                 new_data1 = np.exp(np.log(d1) * float(s1['x slopes']) + float(s1['y intercept']))
+        #                 new_data1.name = key
+        #                 new_data1[new_data1 <= 0] = 0
+        #             else:
+        #                 reg_lst.append(res2.summary_df)
+
+        #                 s1 = res2.summary_df.iloc[0]
+        #                 x_sites = s1['x sites'].split(', ')
+        #                 x_slopes = [float(s) for s in s1['x slopes'].split(', ')]
+        #                 intercept = float(s1['y intercept'])
+
+        #                 d1 = man_rec_ts_data3[x_sites[0]].copy()
+        #                 d1[d1 <= 0] = 0.001
+        #                 d2 = man_rec_ts_data3[x_sites[1]].copy()
+        #                 d2[d2 <= 0] = 0.001
+
+        #                 new_data1 = np.exp((np.log(d1) * float(x_slopes[0])) + (np.log(d2) * float(x_slopes[1])) + intercept)
+        #                 new_data1.name = key
+        #                 new_data1[new_data1 <= 0] = 0
+
+        #             new_lst.append(new_data1)
+
+        #         new_data2 = pd.concat(new_lst, axis=1)
+        #         reg_df = pd.concat(reg_lst).reset_index()
+
+        #     elif ds['method'] == 'sensor_recording':
+        #         rec_flow_data = flow_data.set_index(['station_id', 'time'])['streamflow'].unstack(0)
+        #     else:
+        #         raise ValueError('The dataset method should be either field_activity or sensor_recording.')
+
+        # if not 'sensor_recording' in methods:
+        #     flow = new_data2.round(3)
+        # elif not 'field_activity' in methods:
+        #     flow = rec_flow_data.round(3)
+        #     reg_df = pd.DataFrame()
+        # else:
+        #     flow = pd.concat([rec_flow_data, new_data2], axis=1).round(3)
+
+        # ## Save if required
+        # if hasattr(self, 'output_path'):
+        #     run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
+
+        #     # stns
+
+        #     if not reg_df.empty:
+        #         reg_flow_csv = outputs['reg_flow_csv'].format(run_date=run_time)
+        #         reg_df.to_csv(os.path.join(self.output_path, reg_flow_csv), index=False)
+
+        #     flow_csv = outputs['flow_csv'].format(run_date=run_time)
+        #     flow.to_csv(os.path.join(self.output_path, flow_csv))
+
+        # setattr(self, 'flow', flow)
+        # setattr(self, 'reg_flow', reg_df)
+        # return flow
 
 
     def naturalisation(self):
@@ -708,6 +712,7 @@ class FlowNat(object):
             usage_daily_rate = self.get_usage()
         else:
             usage_daily_rate = self.usage_rate.copy()
+
         if not hasattr(self, 'flow'):
             flow = self.get_flow()
         else:
@@ -733,100 +738,100 @@ class FlowNat(object):
 
         ## Use the reference identifier instead of station_ids
         flow3 = pd.merge(flow2.reset_index(), self.stations[['station_id', 'ref']], on='station_id').drop('station_id', axis=1)
-        flow4 = flow3.groupby(['ref', 'date']).mean()
+        flow4 = flow3.groupby(['ref', 'date']).mean().sort_index()
 
-        nat_flow = flow4.unstack(0).round(3)
-
-        ## Save results
-        if hasattr(self, 'output_path'):
-            run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
-
-            nat_flow_csv = outputs['nat_flow_csv'].format(run_date=run_time)
-            nat_flow.to_csv(os.path.join(self.output_path, nat_flow_csv))
-
-            setattr(self, 'nat_flow_csv', nat_flow_csv)
-
-        setattr(self, 'nat_flow', nat_flow)
-        return nat_flow
-
-
-    def plot(self, input_site):
-        """
-        Function to run and plot the detide results.
-
-        Parameters
-        ----------
-        output_path : str
-            Path to save the html file.
-
-        Returns
-        -------
-        DataFrame or Series
-        """
-
-        if hasattr(self, 'nat_flow'):
-            nat_flow = self.nat_flow.copy()
-        else:
-            nat_flow = self.naturalisation()
-
-        nat_flow1 = nat_flow.loc[:, (slice(None), input_site)]
-        nat_flow1.columns = nat_flow1.columns.droplevel(1)
-
-        colors1 = ['rgb(102,194,165)', 'rgb(252,141,98)', 'rgb(252,141,0)', 'rgb(141,160,203)']
-
-        orig = go.Scattergl(
-            x=nat_flow1.index,
-            y=nat_flow1['flow'],
-            name = 'Recorded Flow',
-            line = dict(color = colors1[3]),
-            opacity = 0.8)
-
-        meas_usage = go.Scattergl(
-            x=nat_flow1.index,
-            y=nat_flow1['stream depletion'],
-            name = 'Stream Depletion',
-            line = dict(color = colors1[1]),
-            opacity = 0.8)
-
-        # est_usage = go.Scattergl(
-        #     x=nat_flow1.index,
-        #     y=nat_flow1['estimated usage'],
-        #     name = 'Estimated Stream Usage',
-        #     line = dict(color = colors1[2]),
-        #     opacity = 0.8)
-
-        est_usage = go.Scattergl(
-            x=nat_flow1.index,
-            y=nat_flow1['allocation'],
-            name = 'Allocation',
-            line = dict(color = colors1[2]),
-            opacity = 0.8)
-
-        nat = go.Scattergl(
-            x=nat_flow1.index,
-            y=nat_flow1['nat flow'],
-            name = 'Naturalised Flow',
-            line = dict(color = colors1[0]),
-            opacity = 0.8)
-
-        data = [orig, meas_usage, est_usage, nat]
-
-        layout = dict(
-            title=input_site + ' Naturalisation',
-            yaxis={'title': 'Flow rate (m3/s)'},
-            dragmode='pan')
-
-        config = {"displaylogo": False, 'scrollZoom': True, 'showLink': False}
-
-        fig = dict(data=data, layout=layout)
+        # nat_flow = flow4.unstack(0).round(3)
 
         ## Save results
-        if hasattr(self, 'output_path'):
-            run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
+        # if hasattr(self, 'output_path'):
+        #     run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
 
-            nat_flow_html = outputs['nat_flow_html'].format(site=input_site, run_date=run_time)
-            py.plot(fig, filename = os.path.join(self.output_path, nat_flow_html), config=config)
-        else:
-            raise ValueError('plot must have an output_path set')
+        #     nat_flow_csv = outputs['nat_flow_csv'].format(run_date=run_time)
+        #     nat_flow.to_csv(os.path.join(self.output_path, nat_flow_csv))
 
-        return nat_flow1
+        #     setattr(self, 'nat_flow_csv', nat_flow_csv)
+
+        setattr(self, 'nat_flow', flow4)
+        return flow4
+
+
+    # def plot(self, input_site):
+    #     """
+    #     Function to run and plot the detide results.
+
+    #     Parameters
+    #     ----------
+    #     output_path : str
+    #         Path to save the html file.
+
+    #     Returns
+    #     -------
+    #     DataFrame or Series
+    #     """
+
+    #     if hasattr(self, 'nat_flow'):
+    #         nat_flow = self.nat_flow.copy()
+    #     else:
+    #         nat_flow = self.naturalisation()
+
+    #     nat_flow1 = nat_flow.loc[:, (slice(None), input_site)]
+    #     nat_flow1.columns = nat_flow1.columns.droplevel(1)
+
+    #     colors1 = ['rgb(102,194,165)', 'rgb(252,141,98)', 'rgb(252,141,0)', 'rgb(141,160,203)']
+
+    #     orig = go.Scattergl(
+    #         x=nat_flow1.index,
+    #         y=nat_flow1['flow'],
+    #         name = 'Recorded Flow',
+    #         line = dict(color = colors1[3]),
+    #         opacity = 0.8)
+
+    #     meas_usage = go.Scattergl(
+    #         x=nat_flow1.index,
+    #         y=nat_flow1['stream depletion'],
+    #         name = 'Stream Depletion',
+    #         line = dict(color = colors1[1]),
+    #         opacity = 0.8)
+
+    #     # est_usage = go.Scattergl(
+    #     #     x=nat_flow1.index,
+    #     #     y=nat_flow1['estimated usage'],
+    #     #     name = 'Estimated Stream Usage',
+    #     #     line = dict(color = colors1[2]),
+    #     #     opacity = 0.8)
+
+    #     est_usage = go.Scattergl(
+    #         x=nat_flow1.index,
+    #         y=nat_flow1['allocation'],
+    #         name = 'Allocation',
+    #         line = dict(color = colors1[2]),
+    #         opacity = 0.8)
+
+    #     nat = go.Scattergl(
+    #         x=nat_flow1.index,
+    #         y=nat_flow1['nat flow'],
+    #         name = 'Naturalised Flow',
+    #         line = dict(color = colors1[0]),
+    #         opacity = 0.8)
+
+    #     data = [orig, meas_usage, est_usage, nat]
+
+    #     layout = dict(
+    #         title=input_site + ' Naturalisation',
+    #         yaxis={'title': 'Flow rate (m3/s)'},
+    #         dragmode='pan')
+
+    #     config = {"displaylogo": False, 'scrollZoom': True, 'showLink': False}
+
+    #     fig = dict(data=data, layout=layout)
+
+    #     ## Save results
+    #     # if hasattr(self, 'output_path'):
+    #     #     run_time = pd.Timestamp.today().strftime('%Y-%m-%dT%H%M')
+
+    #     #     nat_flow_html = outputs['nat_flow_html'].format(site=input_site, run_date=run_time)
+    #     #     py.plot(fig, filename = os.path.join(self.output_path, nat_flow_html), config=config)
+    #     # else:
+    #     #     raise ValueError('plot must have an output_path set')
+
+    #     return nat_flow1
