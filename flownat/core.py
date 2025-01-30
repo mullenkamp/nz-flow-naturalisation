@@ -170,14 +170,14 @@ class FlowNat(object):
 
     def save_path(self, output_path=None):
         """
-    
+
         """
         if output_path is None:
             pass
         elif isinstance(output_path, str):
             if not os.path.exists(output_path):
                 os.makedirs(output_path)
-    
+
             setattr(self, 'output_path', output_path)
 
 
@@ -466,7 +466,7 @@ class FlowNat(object):
         return waps_catch
 
 
-    def get_usage(self):
+    def get_usage(self, est_method='ratio'):
         """
 
         """
@@ -481,7 +481,7 @@ class FlowNat(object):
 
         allo1 = AlloUsage(self.permits_path, self.usage_path, wap_filter={'wap': wap_ids}, from_date=self.from_date, to_date=self.to_date, use_type_mapping=self.use_type_mapping, default_sd_ratio=self.default_sd_ratio)
 
-        usage1 = allo1.get_ts(['allo', 'sd_rates'], 'D', ['wap'])
+        usage1 = allo1.get_ts(['allo', 'sd_rates'], 'D', ['wap'], usage_est_method=est_method)
         usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].dropna().copy()
         if 'sd_rate' not in usage1a.columns:
             usage1a['sd_rate'] = 0
