@@ -466,7 +466,7 @@ class FlowNat(object):
         return waps_catch
 
 
-    def get_usage(self, est_method='ratio'):
+    def get_usage(self, est_method='ratio', est_gw_sd_lags=False):
         """
 
         """
@@ -481,7 +481,7 @@ class FlowNat(object):
 
         allo1 = AlloUsage(self.permits_path, self.usage_path, wap_filter={'wap': wap_ids}, from_date=self.from_date, to_date=self.to_date, use_type_mapping=self.use_type_mapping, default_sd_ratio=self.default_sd_ratio)
 
-        usage1 = allo1.get_ts(['allo', 'sd_rates'], 'D', ['wap'], usage_est_method=est_method)
+        usage1 = allo1.get_ts(['allo', 'sd_rates'], 'D', ['wap'], usage_est_method=est_method, est_gw_sd_lags=est_gw_sd_lags)
         usage1a = usage1[(usage1['total_allo'] > 0) & (usage1['sw_allo'] > 0)].dropna().copy()
         if 'sd_rate' not in usage1a.columns:
             usage1a['sd_rate'] = 0
@@ -699,7 +699,7 @@ class FlowNat(object):
         # return flow
 
 
-    def naturalisation(self):
+    def naturalisation(self, est_method='ratio', est_gw_sd_lags=False):
         """
         Function to put all of the previous functions together to estimate the naturalised flow at the input_sites. It takes the estimated usage rates above each input site and adds that back to the flow.
 
@@ -709,7 +709,7 @@ class FlowNat(object):
             of measured flow, upstream usage rate, and naturalised flow
         """
         if not hasattr(self, 'usage_rate'):
-            usage_daily_rate = self.get_usage()
+            usage_daily_rate = self.get_usage(est_method=est_method, est_gw_sd_lags=est_gw_sd_lags)
         else:
             usage_daily_rate = self.usage_rate.copy()
 
